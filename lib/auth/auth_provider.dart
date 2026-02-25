@@ -97,42 +97,42 @@ class SupabaseAuth extends AuthProvider {
   @override
   Future<void> signInWithGoogle() async {
     if (Platform.isAndroid || Platform.isIOS) {
-      final GoogleSignIn signIn = GoogleSignIn.instance;
-      await signIn.initialize(
-        clientId: Platform.isIOS ? iosClientId : null,
+      final scopes = ['email', 'profile'];
+      final googleSignIn = GoogleSignIn.instance;
+      await googleSignIn.initialize(
         serverClientId: webClientId,
+        clientId: Platform.isIOS ? iosClientId : null,
       );
-      final googleUser = await GoogleSignIn.instance.authenticate();
-      final googleAuth = googleUser.authentication;
-      final idToken = googleAuth.idToken;
-      // final GoogleSignIn googleSignIn = GoogleSignIn(
-      //   clientId: Platform.isIOS ? iosClientId : null,
-      //   serverClientId: webClientId,
-      // );
-      // final googleUser = await googleSignIn.signIn();
-      // final googleAuth = await googleUser!.authentication;
-      // final accessToken = googleAuth.accessToken;
-      // final idToken = googleAuth.idToken;
-      // if (accessToken == null) {
-      //   throw 'No Access Token found.';
-      // }
+      GoogleSignInAccount? googleUser = await googleSignIn
+          .attemptLightweightAuthentication();
+      // or await googleSignIn.authenticate(); which will return a GoogleSignInAccount or throw an exception
+      if (googleUser == null) {
+        // googleUser = await googleSignIn.authenticate();
+        throw AuthException('Failed to sign in with Google.');
+      }
+      /// Authorization is required to obtain the access token with the appropriate scopes for Supabase authentication,
+      /// while also granting permission to access user information.
+      final authorization =
+          await googleUser.authorizationClient.authorizationForScopes(scopes) ??
+          await googleUser.authorizationClient.authorizeScopes(scopes);
+      final idToken = googleUser.authentication.idToken;
       if (idToken == null) {
-        throw 'No ID Token found.';
+        throw AuthException('No ID Token found.');
       }
       await supabase.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
-        // accessToken: accessToken,
+        accessToken: authorization.accessToken,
       );
-      return;
+    } else {
+      await supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: loginCallbackUrl,
+        authScreenLaunchMode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+      );
     }
-    await supabase.auth.signInWithOAuth(
-      OAuthProvider.google,
-      redirectTo: loginCallbackUrl,
-      authScreenLaunchMode: kIsWeb
-          ? LaunchMode.platformDefault
-          : LaunchMode.externalApplication,
-    );
   }
 
   @override

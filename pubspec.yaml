@@ -1,6 +1,6 @@
 name: flutter_common
 description: "Common functions used in our organization's apps"
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/5vnetwork/flutter_common
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
@@ -26,11 +26,8 @@ dependencies:
   rxdart: ^0.28.0
   crypto: ^3.0.6
   sign_in_with_apple: ^7.0.1
-  google_sign_in:
-    git:
-      url: https://github.com/5vnetwork/google-sign-in.git
-      path: google_sign_in
-  flutter_secure_storage: ^9.2.4
+  google_sign_in: ^7.2.0
+  flutter_secure_storage: ^10.0.0
 
 dev_dependencies:
   flutter_test:

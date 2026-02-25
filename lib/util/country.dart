@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_common/l10n/app_localizations.dart';
 
@@ -504,4 +506,9 @@ String getLocalizedCountryName(BuildContext context, String countryCode) {
     default:
       return countryCode;
   }
+}
+
+String getUserCountryCodeFromLocale() {
+  final locale = PlatformDispatcher.instance.locale;
+  return locale.countryCode ?? 'Unknown';
 }

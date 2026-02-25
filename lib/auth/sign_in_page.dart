@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_common/widgets/app_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_common/auth/auth_provider.dart';
@@ -178,8 +179,9 @@ class _SignInPageState extends State<SignInPage> {
                       await Navigator.of(context, rootNavigator: true).push(
                         CupertinoPageRoute(
                           builder: (ctx) => Scaffold(
-                            appBar: AppBar(
-                              title: Text(AppLocalizations.of(context)!.login),
+                            appBar: adaptiveClosableAppBar(
+                              context,
+                              title: AppLocalizations.of(context)!.login,
                             ),
                             body: Padding(
                               padding: const EdgeInsets.all(8.0),
@@ -226,7 +228,8 @@ class _SignInPageState extends State<SignInPage> {
                       });
                       try {
                         await authProvider.signInWithGoogle();
-                      } catch (e) {
+                      } catch (e, stackTrace) {
+                        debugPrint(stackTrace.toString());
                         scaffoldMessenger.showSnackBar(
                           SnackBar(content: Text(e.toString())),
                         );
