@@ -796,5 +796,71 @@ void main() {
       expect(task.isRunning, isTrue);
       task.stop();
     });
+
+    test(
+        'daily: run immediately when 9am Beijing, scheduled 8am, never run',
+        () async {
+      final nineAmBeijingUtc = DateTime.utc(2025, 2, 15, 1, 0);
+      var executed = false;
+      final task = ScheduledTask(
+        sharedPreferences: prefs,
+        task: () async => executed = true,
+        hour: 8,
+        minute: 0,
+        timeZone: 8,
+        lastRunKey: testKey,
+        now: () => nineAmBeijingUtc,
+      );
+      task.start();
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(executed, isTrue);
+      task.stop();
+    });
+
+    test(
+        'daily: run immediately when last run before scheduled time (missed)',
+        () async {
+      final nowUtc = DateTime.utc(2025, 2, 15, 1, 0); // 9am Beijing
+      final lastRunUtc =
+          DateTime.utc(2025, 2, 14, 23, 0); // 7am Beijing same day
+      await prefs.setInt(testKey, lastRunUtc.millisecondsSinceEpoch);
+      var executed = false;
+      final task = ScheduledTask(
+        sharedPreferences: prefs,
+        task: () async => executed = true,
+        hour: 8,
+        minute: 0,
+        timeZone: 8,
+        lastRunKey: testKey,
+        now: () => nowUtc,
+      );
+      task.start();
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(executed, isTrue);
+      task.stop();
+    });
+
+    test(
+        'daily: wait until next day when already run at scheduled time today',
+        () async {
+      final nowUtc = DateTime.utc(2025, 2, 15, 1, 0); // 9am Beijing
+      final lastRunUtc = DateTime.utc(2025, 2, 15, 0, 0); // 8am Beijing today
+      await prefs.setInt(testKey, lastRunUtc.millisecondsSinceEpoch);
+      var executed = false;
+      final task = ScheduledTask(
+        sharedPreferences: prefs,
+        task: () async => executed = true,
+        hour: 8,
+        minute: 0,
+        timeZone: 8,
+        lastRunKey: testKey,
+        now: () => nowUtc,
+      );
+      task.start();
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(executed, isFalse);
+      expect(task.isRunning, isTrue);
+      task.stop();
+    });
   });
 }

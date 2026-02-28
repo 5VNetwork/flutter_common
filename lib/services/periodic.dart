@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Returns current time. Overridable for testing.
+typedef NowProvider = DateTime Function();
+
 /// A class that periodically runs a function with persistence of last run time.
 ///
 /// The class uses SharedPreferences to track the last successful run time.
@@ -45,10 +48,10 @@ class PeriodicTask {
     required Future<void> Function() task,
     required Duration period,
     required String lastRunKey,
-  })  : _prefs = sharedPreferences,
-        _task = task,
-        _period = period,
-        _lastRunKey = lastRunKey;
+  }) : _prefs = sharedPreferences,
+       _task = task,
+       _period = period,
+       _lastRunKey = lastRunKey;
 
   /// Starts the periodic task execution.
   ///
@@ -85,10 +88,10 @@ class PeriodicTask {
     if (newPeriod.isNegative) {
       throw ArgumentError('Period cannot be negative');
     }
-    
+
     final wasRunning = _timer != null;
     _period = newPeriod;
-    
+
     // If running, reschedule with the new period
     if (wasRunning) {
       _timer?.cancel();
@@ -132,14 +135,11 @@ class PeriodicTask {
   /// Executes the task and schedules the next run.
   Future<void> _executeTask() async {
     final taskStartTime = DateTime.now();
-    
+
     try {
       await _task();
       // Task completed successfully, save the timestamp
-      await _prefs.setInt(
-        _lastRunKey,
-        taskStartTime.millisecondsSinceEpoch,
-      );
+      await _prefs.setInt(_lastRunKey, taskStartTime.millisecondsSinceEpoch);
     } catch (e) {
       // Task failed, don't update the last run time
       // The next run will still be scheduled based on the previous successful run
@@ -163,10 +163,10 @@ class PeriodicTask {
 enum ScheduleFrequency {
   /// Run daily at the specified time.
   daily,
-  
+
   /// Run weekly on the specified day of week at the specified time.
   weekly,
-  
+
   /// Run monthly on the specified day of month at the specified time.
   monthly,
 }
@@ -175,6 +175,8 @@ enum ScheduleFrequency {
 ///
 /// The class uses SharedPreferences to track the last successful run time.
 /// When started, it calculates the initial delay until the next scheduled time.
+/// If the last run time is before the scheduled time, it will run immediately.
+/// If the last run time is after the scheduled time, it will run at the next scheduled time.
 /// Supports daily, weekly, and monthly schedules.
 ///
 /// Example (daily):
@@ -232,6 +234,7 @@ class ScheduledTask {
   final int? _dayOfMonth; // 1-31 for monthly
   final int _timeZone; // UTC offset in hours (e.g., 8 for UTC+8, -5 for UTC-5)
   final String _lastRunKey;
+  final NowProvider _now;
   Timer? _timer;
 
   /// Creates a new ScheduledTask instance.
@@ -248,25 +251,28 @@ class ScheduledTask {
   /// [timeZone] - The UTC offset in hours (e.g., 8 for UTC+8 Beijing time, -5 for UTC-5 EST).
   ///   Defaults to 0 (UTC). Range is typically -12 to +14.
   /// [lastRunKey] - The key to use in SharedPreferences for storing last run time
+  /// [now] - Optional provider for current time. Used for deterministic testing.
   ScheduledTask({
     required SharedPreferences sharedPreferences,
     required Future<void> Function() task,
     required int hour,
-    required int minute,
+    int minute = 0,
     ScheduleFrequency frequency = ScheduleFrequency.daily,
     int? dayOfWeek,
     int? dayOfMonth,
     int timeZone = 0,
     required String lastRunKey,
-  })  : _prefs = sharedPreferences,
-        _task = task,
-        _hour = hour,
-        _minute = minute,
-        _frequency = frequency,
-        _dayOfWeek = dayOfWeek,
-        _dayOfMonth = dayOfMonth,
-        _timeZone = timeZone,
-        _lastRunKey = lastRunKey {
+    NowProvider? now,
+  }) : _prefs = sharedPreferences,
+       _task = task,
+       _hour = hour,
+       _minute = minute,
+       _frequency = frequency,
+       _dayOfWeek = dayOfWeek,
+       _dayOfMonth = dayOfMonth,
+       _timeZone = timeZone,
+       _lastRunKey = lastRunKey,
+       _now = now ?? DateTime.now {
     if (hour < 0 || hour > 23) {
       throw ArgumentError('Hour must be between 0 and 23');
     }
@@ -278,7 +284,9 @@ class ScheduledTask {
         throw ArgumentError('dayOfWeek is required for weekly schedules');
       }
       if (dayOfWeek < 1 || dayOfWeek > 7) {
-        throw ArgumentError('dayOfWeek must be between 1 (Monday) and 7 (Sunday)');
+        throw ArgumentError(
+          'dayOfWeek must be between 1 (Monday) and 7 (Sunday)',
+        );
       }
     }
     if (frequency == ScheduleFrequency.monthly) {
@@ -333,219 +341,145 @@ class ScheduledTask {
 
   /// Calculates the delay until the next scheduled run time.
   ///
-  /// Returns the duration until the next occurrence of the scheduled time.
-  /// Handles daily, weekly, and monthly schedules.
+  /// Returns [Duration.zero] if the scheduled time has passed (never run or missed),
+  /// so the task runs immediately. Otherwise returns the delay until the next run.
   Duration _calculateNextRunDelay() {
-    // Get current time in UTC
-    final nowUtc = DateTime.now().toUtc();
-    
-    // Use timezone offset directly (in hours)
+    final nowUtc = _now().toUtc();
     final offsetHours = _timeZone;
-    
-    // Calculate current time in target timezone
     final targetTimeNow = nowUtc.add(Duration(hours: offsetHours));
-    
-    DateTime nextRunTarget;
-    DateTime nextRunUtc;
-    
+
+    late DateTime scheduledThisPeriod;
+    late DateTime previousScheduled;
+    late DateTime nextScheduled;
+
     switch (_frequency) {
       case ScheduleFrequency.daily:
-        nextRunTarget = _calculateNextDailyRun(targetTimeNow);
+        scheduledThisPeriod = _scheduledDailyFor(targetTimeNow);
+        previousScheduled = _scheduledDailyFor(
+          targetTimeNow.subtract(const Duration(days: 1)),
+        );
+        if (targetTimeNow.isBefore(scheduledThisPeriod)) {
+          nextScheduled = scheduledThisPeriod;
+        } else {
+          nextScheduled = _scheduledDailyFor(
+            targetTimeNow.add(const Duration(days: 1)),
+          );
+        }
         break;
       case ScheduleFrequency.weekly:
-        nextRunTarget = _calculateNextWeeklyRun(targetTimeNow);
+        scheduledThisPeriod = _scheduledWeeklyForWeek(targetTimeNow);
+        previousScheduled = _scheduledWeeklyForWeek(
+          targetTimeNow.subtract(const Duration(days: 7)),
+        );
+        if (targetTimeNow.isBefore(scheduledThisPeriod)) {
+          nextScheduled = scheduledThisPeriod;
+        } else {
+          nextScheduled = _scheduledWeeklyForWeek(
+            targetTimeNow.add(const Duration(days: 7)),
+          );
+        }
         break;
       case ScheduleFrequency.monthly:
-        nextRunTarget = _calculateNextMonthlyRun(targetTimeNow);
+        scheduledThisPeriod = _scheduledMonthlyFor(targetTimeNow);
+        previousScheduled = _scheduledMonthlyFor(
+          _subtractOneMonth(targetTimeNow),
+        );
+        if (targetTimeNow.isBefore(scheduledThisPeriod)) {
+          nextScheduled = scheduledThisPeriod;
+        } else {
+          nextScheduled = _scheduledMonthlyFor(_addOneMonth(targetTimeNow));
+        }
         break;
     }
-    
-    // Convert to UTC by subtracting offset
-    nextRunUtc = nextRunTarget.subtract(Duration(hours: offsetHours));
-    
-    // Check if we've already run at this scheduled time based on last run time
+
     final lastRunTimestamp = _prefs.getInt(_lastRunKey);
+    DateTime? lastRunTarget;
     if (lastRunTimestamp != null) {
-      final lastRunUtc = DateTime.fromMillisecondsSinceEpoch(lastRunTimestamp).toUtc();
-      final lastRunTarget = lastRunUtc.add(Duration(hours: offsetHours));
-      
-      // If we've already run at or after this scheduled time, find the next occurrence
-      if (!_isBeforeScheduledTime(lastRunTarget, nextRunTarget)) {
-        // Find the next occurrence
-        switch (_frequency) {
-          case ScheduleFrequency.daily:
-            nextRunTarget = _calculateNextDailyRun(
-              DateTime.utc(
-                nextRunTarget.year,
-                nextRunTarget.month,
-                nextRunTarget.day + 1,
-              ),
-            );
-            break;
-          case ScheduleFrequency.weekly:
-            nextRunTarget = _calculateNextWeeklyRun(
-              DateTime.utc(
-                nextRunTarget.year,
-                nextRunTarget.month,
-                nextRunTarget.day + 1,
-              ),
-            );
-            break;
-          case ScheduleFrequency.monthly:
-            nextRunTarget = _calculateNextMonthlyRun(
-              DateTime.utc(
-                nextRunTarget.year,
-                nextRunTarget.month + 1,
-                1,
-              ),
-            );
-            break;
-        }
-        nextRunUtc = nextRunTarget.subtract(Duration(hours: offsetHours));
-      }
+      final lastRunUtc = DateTime.fromMillisecondsSinceEpoch(
+        lastRunTimestamp,
+      ).toUtc();
+      lastRunTarget = lastRunUtc.add(Duration(hours: offsetHours));
     }
-    
-    // Calculate delay from now to next run time
-    final delay = nextRunUtc.difference(nowUtc);
+
+    // Never run: run immediately if scheduled time passed, else wait
+    if (lastRunTarget == null) {
+      if (!scheduledThisPeriod.isAfter(targetTimeNow)) {
+        return Duration.zero;
+      }
+      final delay = scheduledThisPeriod.difference(targetTimeNow);
+      return delay.isNegative ? Duration.zero : delay;
+    }
+
+    // Last scheduled time at or before "now"
+    final currentPeriodHasOccurred = !scheduledThisPeriod.isAfter(
+      targetTimeNow,
+    );
+    final lastScheduled = currentPeriodHasOccurred
+        ? scheduledThisPeriod
+        : previousScheduled;
+
+    // Missed run: last run was before the last scheduled time → run immediately
+    if (lastRunTarget.isBefore(lastScheduled)) {
+      return Duration.zero;
+    }
+
+    // Otherwise wait until next occurrence
+    final delay = nextScheduled.difference(targetTimeNow);
     return delay.isNegative ? Duration.zero : delay;
   }
 
-  /// Calculates the next daily run time.
-  DateTime _calculateNextDailyRun(DateTime targetTimeNow) {
-    var nextRun = DateTime.utc(
-      targetTimeNow.year,
-      targetTimeNow.month,
-      targetTimeNow.day,
-      _hour,
-      _minute,
-    );
-    
-    // If the scheduled time has already passed today, schedule for tomorrow
-    final targetTimeUtc = DateTime.utc(
-      targetTimeNow.year,
-      targetTimeNow.month,
-      targetTimeNow.day,
-      targetTimeNow.hour,
-      targetTimeNow.minute,
-    );
-    
-    if (nextRun.isBefore(targetTimeUtc) || nextRun.isAtSameMomentAs(targetTimeUtc)) {
-      nextRun = DateTime.utc(
-        targetTimeNow.year,
-        targetTimeNow.month,
-        targetTimeNow.day + 1,
-        _hour,
-        _minute,
-      );
-    }
-    
-    return nextRun;
-  }
-
-  /// Calculates the next weekly run time.
-  DateTime _calculateNextWeeklyRun(DateTime targetTimeNow) {
-    // DateTime.weekday: 1=Monday, 7=Sunday
-    // Our _dayOfWeek: 1=Monday, 7=Sunday (same format)
-    final currentDayOfWeek = targetTimeNow.weekday;
-    final targetDayOfWeek = _dayOfWeek!;
-    
-    // Calculate days until next occurrence
-    int daysUntilNext;
-    if (targetDayOfWeek > currentDayOfWeek) {
-      // Target day is later this week
-      daysUntilNext = targetDayOfWeek - currentDayOfWeek;
-    } else if (targetDayOfWeek < currentDayOfWeek) {
-      // Target day is next week
-      daysUntilNext = 7 - (currentDayOfWeek - targetDayOfWeek);
-    } else {
-      // Same day - check if time has passed
-      final targetTime = DateTime.utc(
-        targetTimeNow.year,
-        targetTimeNow.month,
-        targetTimeNow.day,
-        _hour,
-        _minute,
-      );
-      final currentTime = DateTime.utc(
-        targetTimeNow.year,
-        targetTimeNow.month,
-        targetTimeNow.day,
-        targetTimeNow.hour,
-        targetTimeNow.minute,
-      );
-      
-      if (targetTime.isBefore(currentTime) || targetTime.isAtSameMomentAs(currentTime)) {
-        // Time has passed, schedule for next week
-        daysUntilNext = 7;
-      } else {
-        // Time hasn't passed yet today
-        daysUntilNext = 0;
-      }
-    }
-    
-    final nextDate = targetTimeNow.add(Duration(days: daysUntilNext));
+  DateTime _scheduledDailyFor(DateTime dayInTargetZone) {
     return DateTime.utc(
-      nextDate.year,
-      nextDate.month,
-      nextDate.day,
+      dayInTargetZone.year,
+      dayInTargetZone.month,
+      dayInTargetZone.day,
       _hour,
       _minute,
     );
   }
 
-  /// Calculates the next monthly run time.
-  DateTime _calculateNextMonthlyRun(DateTime targetTimeNow) {
-    var year = targetTimeNow.year;
-    var month = targetTimeNow.month;
+  DateTime _scheduledWeeklyForWeek(DateTime refInTargetZone) {
+    final currentDayOfWeek = refInTargetZone.weekday;
+    final targetDayOfWeek = _dayOfWeek!;
+    final dayDelta = targetDayOfWeek - currentDayOfWeek;
+    final scheduledDate = refInTargetZone.add(Duration(days: dayDelta));
+    return DateTime.utc(
+      scheduledDate.year,
+      scheduledDate.month,
+      scheduledDate.day,
+      _hour,
+      _minute,
+    );
+  }
+
+  DateTime _scheduledMonthlyFor(DateTime refInTargetZone) {
+    var year = refInTargetZone.year;
+    var month = refInTargetZone.month;
     final requestedDay = _dayOfMonth ?? 1;
     var day = requestedDay;
-    
-    // Get the last day of the current month
     final lastDayOfMonth = DateTime(year, month + 1, 0).day;
-    
-    // If the day doesn't exist in this month (e.g., Feb 30), use the last day
-    if (day > lastDayOfMonth) {
-      day = lastDayOfMonth;
-    }
-    
-    var nextRun = DateTime.utc(year, month, day, _hour, _minute);
-    final targetTimeUtc = DateTime.utc(
-      targetTimeNow.year,
-      targetTimeNow.month,
-      targetTimeNow.day,
-      targetTimeNow.hour,
-      targetTimeNow.minute,
-    );
-    
-    // If the scheduled time has already passed this month, schedule for next month
-    if (nextRun.isBefore(targetTimeUtc) || nextRun.isAtSameMomentAs(targetTimeUtc)) {
-      month++;
-      if (month > 12) {
-        month = 1;
-        year++;
-      }
-      
-      // Recalculate day for next month
-      final nextMonthLastDay = DateTime(year, month + 1, 0).day;
-      day = requestedDay > nextMonthLastDay ? nextMonthLastDay : requestedDay;
-      
-      nextRun = DateTime.utc(year, month, day, _hour, _minute);
-    }
-    
-    return nextRun;
+    if (day > lastDayOfMonth) day = lastDayOfMonth;
+    return DateTime.utc(year, month, day, _hour, _minute);
   }
 
-  /// Checks if lastRun is before the scheduled time.
-  bool _isBeforeScheduledTime(DateTime lastRun, DateTime scheduled) {
-    if (lastRun.year < scheduled.year) return true;
-    if (lastRun.year > scheduled.year) return false;
-    if (lastRun.month < scheduled.month) return true;
-    if (lastRun.month > scheduled.month) return false;
-    if (lastRun.day < scheduled.day) return true;
-    if (lastRun.day > scheduled.day) return false;
-    if (lastRun.hour < scheduled.hour) return true;
-    if (lastRun.hour > scheduled.hour) return false;
-    return lastRun.minute < scheduled.minute;
+  DateTime _addOneMonth(DateTime ref) {
+    var year = ref.year;
+    var month = ref.month + 1;
+    if (month > 12) {
+      month = 1;
+      year++;
+    }
+    return DateTime.utc(year, month, 1, ref.hour, ref.minute);
+  }
+
+  DateTime _subtractOneMonth(DateTime ref) {
+    var year = ref.year;
+    var month = ref.month - 1;
+    if (month < 1) {
+      month = 12;
+      year--;
+    }
+    return DateTime.utc(year, month, 1, ref.hour, ref.minute);
   }
 
   /// Schedules the next run of the task.
@@ -559,15 +493,12 @@ class ScheduledTask {
 
   /// Executes the task and schedules the next run.
   Future<void> _executeTask() async {
-    final taskStartTime = DateTime.now();
-    
+    final taskStartTime = _now();
+
     try {
       await _task();
       // Task completed successfully, save the timestamp
-      await _prefs.setInt(
-        _lastRunKey,
-        taskStartTime.millisecondsSinceEpoch,
-      );
+      await _prefs.setInt(_lastRunKey, taskStartTime.millisecondsSinceEpoch);
     } catch (e) {
       // Task failed, don't update the last run time
       // The next run will still be scheduled based on the previous successful run
