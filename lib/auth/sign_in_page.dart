@@ -229,7 +229,7 @@ class _SignInPageState extends State<SignInPage> {
                       try {
                         await authProvider.signInWithGoogle();
                       } catch (e, stackTrace) {
-                        debugPrint(stackTrace.toString());
+                        debugPrint('Failed to sign in with Google: $e\n$stackTrace');
                         scaffoldMessenger.showSnackBar(
                           SnackBar(content: Text(e.toString())),
                         );
