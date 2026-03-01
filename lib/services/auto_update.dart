@@ -205,24 +205,11 @@ class AutoUpdateService extends ChangeNotifier {
         publishedAt: DateTime.now(),
       );
     }
-    try {
-      final release = await getLatestReleaseContainingNewerAndroidApk(
+    return getLatestReleaseContainingNewerAndroidApk(
         _repository,
         _currentVersion,
         _assetName,
       );
-      if (release == null) {
-        return null;
-      }
-      return release;
-    } catch (e, stackTrace) {
-      _logger?.e(
-        'Error checking for updates',
-        error: e,
-        stackTrace: stackTrace,
-      );
-      rethrow;
-    }
   }
 
   /// Check for updates and install if there is a new version
