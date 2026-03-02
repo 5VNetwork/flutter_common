@@ -80,7 +80,7 @@ class AutoUpdateService {
   }
 
   void setSkipCurrentVersion() async {
-    final localInstaller = this.localInstaller;
+    final localInstaller = _localInstaller;
     if (localInstaller == null) {
       return;
     }
@@ -89,22 +89,22 @@ class AutoUpdateService {
   }
 
   // version and apk file path
-  DownloadedInstaller? get localInstaller {
+  DownloadedInstaller? get _localInstaller {
     final json = _pref.getString('downloadedInstaller');
     if (json == null) return null;
     final installer = DownloadedInstaller.fromJson(jsonDecode(json));
-    final localApkVersion = installer.version;
-    if (localApkVersion == _currentVersion ||
-        !versionNewerThan(localApkVersion, _currentVersion)) {
-      _deleteLocalInstaller();
-      return null;
-    }
+    // final localApkVersion = installer.version;
+    // if (localApkVersion == _currentVersion ||
+    //     !versionNewerThan(localApkVersion, _currentVersion)) {
+    //   _deleteLocalInstaller();
+    //   return null;
+    // }
     return installer;
   }
 
   /// Check if enough time has passed since the last update check
   bool _shouldCheckAndUpdate() {
-    if (localInstaller != null) {
+    if (_localInstaller != null) {
       return true;
     }
 
@@ -238,7 +238,7 @@ class AutoUpdateService {
     try {
       final newestVersion = release.version;
       // if local apk exist
-      final localInstaller = this.localInstaller;
+      final localInstaller = _localInstaller;
       if (localInstaller != null) {
         final localVersion = localInstaller.version;
         // if it is older than the newest version, delete it
@@ -311,7 +311,7 @@ class AutoUpdateService {
   }
 
   Future<void> _deleteLocalInstaller() async {
-    final localInstaller = this.localInstaller;
+    final localInstaller = _localInstaller;
     if (localInstaller != null) {
       final apkFile = File(localInstaller.path);
       if (apkFile.existsSync()) {
@@ -327,7 +327,7 @@ class AutoUpdateService {
 
   /// Install the downloaded installer
   Future<void> installLocalInstaller() async {
-    final installer = localInstaller;
+    final installer = _localInstaller;
     if (installer == null) {
       throw Exception('No installer found');
     }
