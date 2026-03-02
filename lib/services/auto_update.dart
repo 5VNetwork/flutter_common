@@ -7,7 +7,7 @@ import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
-import 'package:logger/logger.dart';
+import 'package:flutter_common/types/logger.dart';
 import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_common/common.dart';
@@ -188,25 +188,25 @@ class AutoUpdateService {
 
   /// Returns the latest release if there is a new version
   Future<GitHubRelease?> _getLatestRelease() async {
-    if (kDebugMode) {
-      return GitHubRelease(
-        tagName: '9.9.9',
-        name: '9.9.9',
-        prerelease: false,
-        draft: false,
-        body: 'Test',
-        assets: [
-          GitHubAsset(
-            name: '9.9.9.apk',
-            downloadUrl: '',
-            size: 1000,
-            contentType: 'application/vnd.android.package-archive',
-            updatedAt: DateTime.now(),
-          ),
-        ],
-        publishedAt: DateTime.now(),
-      );
-    }
+    // if (kDebugMode) {
+    //   return GitHubRelease(
+    //     tagName: '9.9.9',
+    //     name: '9.9.9',
+    //     prerelease: false,
+    //     draft: false,
+    //     body: 'Test',
+    //     assets: [
+    //       GitHubAsset(
+    //         name: '9.9.9.apk',
+    //         downloadUrl: '',
+    //         size: 1000,
+    //         contentType: 'application/vnd.android.package-archive',
+    //         updatedAt: DateTime.now(),
+    //       ),
+    //     ],
+    //     publishedAt: DateTime.now(),
+    //   );
+    // }
     return getLatestReleaseContainingNewerAndroidApk(
       _repository,
       _currentVersion,
@@ -259,7 +259,7 @@ class AutoUpdateService {
       }
 
       final newestDownloadUrl = '$_downloadUrl/$_assetName';
-
+      DownloadedInstaller? installer;
       if (Platform.isAndroid) {
         final zipPath = join(_cacheDir, '${release.version}.apk.zip');
         _logger?.d('downloading new apk zip $zipPath');
@@ -277,37 +277,34 @@ class AutoUpdateService {
             join(_cacheDir, "${release.version}.apk"),
           );
           Directory(apkFolder).deleteSync(recursive: true);
-
-          final installer = DownloadedInstaller(
+          installer = DownloadedInstaller(
             version: release.version,
             path: newApkFile.path,
             newFeatures: release.body,
           );
           _setDownloadedInstallerPath(installer);
-          _onDownloadComplete(installer);
         });
       } else if (Platform.isWindows) {
         final downloadDest = join(_cacheDir, '${release.version}_$_assetName');
         await _downloader(newestDownloadUrl, downloadDest);
-        _setDownloadedInstallerPath(
-          DownloadedInstaller(
-            version: release.version,
-            path: downloadDest,
-            newFeatures: release.body,
-          ),
+        installer = DownloadedInstaller(
+          version: release.version,
+          path: downloadDest,
+          newFeatures: release.body,
         );
+        _setDownloadedInstallerPath(installer);
       } else if (Platform.isLinux) {
         _logger?.d('Downloading installer for Linux $newestDownloadUrl');
         final downloadDest = join(_cacheDir, '${release.version}_$_assetName');
         await _downloader(newestDownloadUrl, downloadDest);
-        _setDownloadedInstallerPath(
-          DownloadedInstaller(
-            version: release.version,
-            path: downloadDest,
-            newFeatures: release.body,
-          ),
+        installer = DownloadedInstaller(
+          version: release.version,
+          path: downloadDest,
+          newFeatures: release.body,
         );
+        _setDownloadedInstallerPath(installer);
       }
+      _onDownloadComplete(installer!);
     } catch (e, stackTrace) {
       _logger?.e('_downloadToLocal', error: e, stackTrace: stackTrace);
     }
@@ -397,7 +394,7 @@ class HasNewerVersionDialog extends StatelessWidget {
           },
           child: Text(AppLocalizations.of(context)!.skipThisVersion),
         ),
-        FilledButton.tonal(
+        FilledButton(
           onPressed: () async {
             Navigator.of(context).pop();
             try {
