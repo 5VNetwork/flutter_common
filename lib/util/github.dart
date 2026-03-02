@@ -39,6 +39,8 @@ class GitHubRelease {
     );
   }
 
+  
+
   String getDownloadUrl(String assetName) =>
       assets.firstWhere((e) => e.name == assetName).downloadUrl;
 

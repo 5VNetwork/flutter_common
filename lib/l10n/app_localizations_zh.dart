@@ -15,6 +15,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get no => '不';
 
   @override
+  String hasNewerVersionDialog(String version) {
+    return '有新版本$version可用，是否更新？';
+  }
+
+  @override
   String newVersionDownloadedDialog(String version) {
     return '新版本$version已下载，是否安装？';
   }

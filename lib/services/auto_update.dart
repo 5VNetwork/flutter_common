@@ -18,9 +18,9 @@ import 'package:flutter_common/util/version.dart';
 import 'package:flutter_common/widgets/dialog.dart';
 
 /// When enabled, listeners will be notified when there is a DownloadedInstaller
-class AutoUpdateService extends ChangeNotifier {
+class AutoUpdateService {
   final String _currentVersion;
-  Timer? _updateTimer;
+  Timer? _timer;
   final Future<void> Function(String url, String dest) _downloader;
   final String _assetName;
   final String _repository;
@@ -29,6 +29,8 @@ class AutoUpdateService extends ChangeNotifier {
   final Function() _exitCurrentApp;
   final String _cacheDir;
   final String _downloadUrl;
+  final Function(GitHubRelease) _onNewVersionAvailable;
+  final Function(DownloadedInstaller) _onDownloadComplete;
 
   // Auto-update checks are performed daily (every 24 hours) when enabled
   AutoUpdateService({
@@ -41,6 +43,8 @@ class AutoUpdateService extends ChangeNotifier {
     required String cacheDir,
     required String downloadUrl,
     Logger? logger,
+    required void Function(GitHubRelease) onNewVersionAvailable,
+    required void Function(DownloadedInstaller) onDownloadComplete,
   }) : _logger = logger,
        _pref = pref,
        _currentVersion = currentVersion,
@@ -49,8 +53,10 @@ class AutoUpdateService extends ChangeNotifier {
        _repository = repository,
        _exitCurrentApp = exitCurrentApp,
        _cacheDir = cacheDir,
-       _downloadUrl = downloadUrl {
-    _initialize();
+       _downloadUrl = downloadUrl,
+       _onNewVersionAvailable = onNewVersionAvailable,
+       _onDownloadComplete = onDownloadComplete {
+    _resetTimer();
   }
 
   void _setDownloadedInstallerPath(DownloadedInstaller? installer) {
@@ -73,7 +79,7 @@ class AutoUpdateService extends ChangeNotifier {
     return _pref.getString('skipVersion');
   }
 
-  void setSkipCurrentInstaller() async {
+  void setSkipCurrentVersion() async {
     final localInstaller = this.localInstaller;
     if (localInstaller == null) {
       return;
@@ -82,7 +88,6 @@ class AutoUpdateService extends ChangeNotifier {
     await _deleteLocalInstaller();
   }
 
-  String? downloadingVersion;
   // version and apk file path
   DownloadedInstaller? get localInstaller {
     final json = _pref.getString('downloadedInstaller');
@@ -131,38 +136,35 @@ class AutoUpdateService extends ChangeNotifier {
     return nextCheck.difference(now);
   }
 
-  void _initialize() {
-    // Start auto-update if enabled
-    if (autoUpdate) {
-      _startAutoUpdate();
+  bool get autoCheckLatestVersion =>
+      _pref.getBool('autoCheckLatestVersion') ?? true;
+  void setAutoCheckLatestVersion(bool value) {
+    _pref.setBool('autoCheckLatestVersion', value);
+    _resetTimer();
+  }
+
+  void _resetTimer() {
+    if (autoUpdate || autoCheckLatestVersion) {
+      _startChecking();
+    } else {
+      _stopChecking();
     }
   }
 
   bool get autoUpdate => _pref.getBool('autoUpdate') ?? true;
   void setAutoUpdate(bool value) {
     _pref.setBool('autoUpdate', value);
-    notifyListeners();
-    _updateAutoUpdateState();
-  }
-
-  /// Update auto-update state based on current preferences
-  void _updateAutoUpdateState() {
-    if (autoUpdate) {
-      _startAutoUpdate();
-    } else {
-      _stopAutoUpdate();
-    }
+    _resetTimer();
   }
 
   /// Start automatic update checking
-  void _startAutoUpdate() {
-    if (_updateTimer != null) return;
+  void _startChecking() {
+    if (_timer != null) return;
 
     _logger?.i('Starting auto-update service');
-
     // Check if we need to check for updates based on last check time
     if (_shouldCheckAndUpdate()) {
-      checkAndUpdate();
+      _check();
     } else {
       final timeUntilNextCheck = _getTimeUntilNextCheck();
       _logger?.i(
@@ -172,20 +174,20 @@ class AutoUpdateService extends ChangeNotifier {
 
     // Schedule daily checks (24 hours)
     const dailyInterval = Duration(hours: 24);
-    _updateTimer = Timer.periodic(dailyInterval, (_) => checkAndUpdate());
+    _timer = Timer.periodic(dailyInterval, (_) => _check());
 
-    _logger?.i('Auto-update service scheduled to check daily');
+    _logger?.i('Checking for updates scheduled to check daily');
   }
 
   /// Stop automatic update checking
-  void _stopAutoUpdate() {
-    _logger?.i('Stopping auto-update service');
-    _updateTimer?.cancel();
-    _updateTimer = null;
+  void _stopChecking() {
+    _logger?.i('Stopping checking for updates');
+    _timer?.cancel();
+    _timer = null;
   }
 
   /// Returns the latest release if there is a new version
-  Future<GitHubRelease?> checkForUpdates() async {
+  Future<GitHubRelease?> _getLatestRelease() async {
     if (kDebugMode) {
       return GitHubRelease(
         tagName: '9.9.9',
@@ -206,114 +208,108 @@ class AutoUpdateService extends ChangeNotifier {
       );
     }
     return getLatestReleaseContainingNewerAndroidApk(
-        _repository,
-        _currentVersion,
-        _assetName,
-      );
+      _repository,
+      _currentVersion,
+      _assetName,
+    );
   }
 
   /// Check for updates and install if there is a new version
-  Future<void> checkAndUpdate() async {
+  Future<void> _check() async {
     _logger?.i('checkAndUpdate');
-
-    try {
-      // _prefHelper.setDownloadedApkPath(join(await getCacheDir(), '2.0.12.apk'));
-      // check if there is a previously downloaded apk
-      // get newest version
-      final release = await checkForUpdates();
-      if (release != null) {
-        final newestVersion = release.version;
-        // if local apk exist
-        final localInstaller = this.localInstaller;
-        if (localInstaller != null) {
-          final localVersion = localInstaller.version;
-          // if it is older than the newest version, delete it
-          if (localVersion != newestVersion) {
-            _logger?.d('local apk not newest, delete it $localInstaller');
-            await _deleteLocalInstaller();
-          } else {
-            if (_skipVersion == newestVersion) {
-              _logger?.d('skip this version, delete local apk $localInstaller');
-              await _deleteLocalInstaller();
-            } else {
-              _logger?.d('local apk is newest, notify listeners');
-              notifyListeners();
-            }
-            return;
-          }
-          // no local apk, download it
-        }
-        if (_skipVersion == newestVersion) {
-          _logger?.d('skip this version, no need to download');
-          return;
-        }
-
-        downloadingVersion = newestVersion;
-        notifyListeners();
-
-        await _downloadToLocal(release).catchError((error) {
-          _logger?.e('Error downloading update', error: error);
-        });
-
-        downloadingVersion = null;
-        notifyListeners();
+    // check if there is a previously downloaded apk
+    // get newest version
+    final release = await _getLatestRelease();
+    if (release != null) {
+      if (_skipVersion == release.version) {
+        _logger?.d('skip this version ${release.version}');
+        return;
       }
-      _setLastUpdateCheckTime(DateTime.now().millisecondsSinceEpoch);
-    } catch (e, stackTrace) {
-      _logger?.e('_checkAndUpdate', error: e, stackTrace: stackTrace);
+      if (autoUpdate) {
+        await _downloadToLocal(release);
+      } else {
+        _onNewVersionAvailable(release);
+      }
     }
+    _setLastUpdateCheckTime(DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<void> _downloadToLocal(GitHubRelease release) async {
-    final newestDownloadUrl = '$_downloadUrl/$_assetName';
+    try {
+      final newestVersion = release.version;
+      // if local apk exist
+      final localInstaller = this.localInstaller;
+      if (localInstaller != null) {
+        final localVersion = localInstaller.version;
+        // if it is older than the newest version, delete it
+        if (localVersion != newestVersion) {
+          _logger?.d('local apk not newest, delete it $localInstaller');
+          await _deleteLocalInstaller();
+        } else {
+          if (_skipVersion == newestVersion) {
+            _logger?.d('skip this version, delete local apk $localInstaller');
+            await _deleteLocalInstaller();
+          } else {
+            _logger?.d('local apk is newest, notify listeners');
+            _onDownloadComplete(localInstaller);
+          }
+          return;
+        }
+        // no local apk, download it
+      }
 
-    if (Platform.isAndroid) {
-      final zipPath = join(_cacheDir, '${release.version}.apk.zip');
-      _logger?.d('downloading new apk zip $zipPath');
-      await _downloader(newestDownloadUrl, zipPath).then((value) async {
-        _logger?.d('downloaded new apk zip $zipPath, extract it');
-        final apkFolder = zipPath.replaceAll(".apk.zip", "");
-        // a folder named ${version} will be created and inside it there is a vx-arm64-v8a.apk
-        await extractFileToDisk(zipPath, apkFolder);
-        File(zipPath).deleteSync();
-        // move the apk out of the folder and delete the folder
-        final apkFile = File(
-          join(apkFolder, _assetName.replaceAll(".zip", "")),
-        );
-        final newApkFile = apkFile.renameSync(
-          join(_cacheDir, "${release.version}.apk"),
-        );
-        Directory(apkFolder).deleteSync(recursive: true);
+      final newestDownloadUrl = '$_downloadUrl/$_assetName';
 
-        _setDownloadedInstallerPath(
-          DownloadedInstaller(
+      if (Platform.isAndroid) {
+        final zipPath = join(_cacheDir, '${release.version}.apk.zip');
+        _logger?.d('downloading new apk zip $zipPath');
+        await _downloader(newestDownloadUrl, zipPath).then((value) async {
+          _logger?.d('downloaded new apk zip $zipPath, extract it');
+          final apkFolder = zipPath.replaceAll(".apk.zip", "");
+          // a folder named ${version} will be created and inside it there is a vx-arm64-v8a.apk
+          await extractFileToDisk(zipPath, apkFolder);
+          File(zipPath).deleteSync();
+          // move the apk out of the folder and delete the folder
+          final apkFile = File(
+            join(apkFolder, _assetName.replaceAll(".zip", "")),
+          );
+          final newApkFile = apkFile.renameSync(
+            join(_cacheDir, "${release.version}.apk"),
+          );
+          Directory(apkFolder).deleteSync(recursive: true);
+
+          final installer = DownloadedInstaller(
             version: release.version,
             path: newApkFile.path,
             newFeatures: release.body,
+          );
+          _setDownloadedInstallerPath(installer);
+          _onDownloadComplete(installer);
+        });
+      } else if (Platform.isWindows) {
+        final downloadDest = join(_cacheDir, '${release.version}_$_assetName');
+        await _downloader(newestDownloadUrl, downloadDest);
+        _setDownloadedInstallerPath(
+          DownloadedInstaller(
+            version: release.version,
+            path: downloadDest,
+            newFeatures: release.body,
           ),
         );
-      });
-    } else if (Platform.isWindows) {
-      final downloadDest = join(_cacheDir, '${release.version}_$_assetName');
-      await _downloader(newestDownloadUrl, downloadDest);
-      _setDownloadedInstallerPath(
-        DownloadedInstaller(
-          version: release.version,
-          path: downloadDest,
-          newFeatures: release.body,
-        ),
-      );
-    } else if (Platform.isLinux) {
-      _logger?.d('Downloading installer for Linux $newestDownloadUrl');
-      final downloadDest = join(_cacheDir, '${release.version}_$_assetName');
-      await _downloader(newestDownloadUrl, downloadDest);
-      _setDownloadedInstallerPath(
-        DownloadedInstaller(
-          version: release.version,
-          path: downloadDest,
-          newFeatures: release.body,
-        ),
-      );
+      } else if (Platform.isLinux) {
+        _logger?.d('Downloading installer for Linux $newestDownloadUrl');
+        final downloadDest = join(_cacheDir, '${release.version}_$_assetName');
+        await _downloader(newestDownloadUrl, downloadDest);
+        _setDownloadedInstallerPath(
+          DownloadedInstaller(
+            version: release.version,
+            path: downloadDest,
+            newFeatures: release.body,
+          ),
+        );
+      }
+    } catch (e, stackTrace) {
+      _logger?.e('_downloadToLocal', error: e, stackTrace: stackTrace);
     }
   }
 
@@ -325,8 +321,11 @@ class AutoUpdateService extends ChangeNotifier {
         apkFile.deleteSync();
       }
       _setDownloadedInstallerPath(null);
-      notifyListeners();
     }
+  }
+
+  Future<void> updateToRelease(GitHubRelease release) async {
+    return _downloadToLocal(release);
   }
 
   /// Install the downloaded installer
@@ -370,39 +369,65 @@ class AutoUpdateService extends ChangeNotifier {
       // await exitCurrentApp();
     }
   }
+}
+
+class HasNewerVersionDialog extends StatelessWidget {
+  const HasNewerVersionDialog({
+    super.key,
+    required this.release,
+    required this.setSkipCurrentVersion,
+    required this.updateToRelease,
+  });
+  final GitHubRelease release;
+  final Function() setSkipCurrentVersion;
+  final Function(GitHubRelease) updateToRelease;
 
   @override
-  void dispose() {
-    _stopAutoUpdate();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        AppLocalizations.of(context)!.hasNewerVersionDialog(release.tagName),
+      ),
+      content: Text(release.body),
+      actions: [
+        OutlinedButton(
+          onPressed: () async {
+            Navigator.of(context).pop();
+            setSkipCurrentVersion();
+          },
+          child: Text(AppLocalizations.of(context)!.skipThisVersion),
+        ),
+        FilledButton.tonal(
+          onPressed: () async {
+            Navigator.of(context).pop();
+            try {
+              await updateToRelease(release);
+            } catch (e) {
+              if (context.mounted) {
+                showAlertDialog(
+                  context,
+                  AppLocalizations.of(context)!.installFailed(e.toString()),
+                );
+              }
+            }
+          },
+          child: Text(AppLocalizations.of(context)!.okay),
+        ),
+      ],
+    );
   }
-
-  // void Function() getListener(GlobalKey<NavigatorState> rootNavigationKey) {
-  //   return () {
-  //     if (rootNavigationKey.currentContext == null) {
-  //       return;
-  //     }
-
-  //     final localInstaller = hasLocalInstallerToInstall;
-  //     if (localInstaller != null) {
-  //       final version = localInstaller.version;
-  //       showDialog(
-  //         context: rootNavigationKey.currentContext!,
-  //         builder: (context) => ,
-  //       );
-  //     }
-  //   };
-  // }
 }
 
 class InstallNewerVersionDialog extends StatelessWidget {
   const InstallNewerVersionDialog({
     super.key,
     required this.downloadedInstaller,
-    required this.autoUpdateService,
+    required this.setSkipCurrentInstaller,
+    required this.installLocalInstaller,
   });
   final DownloadedInstaller downloadedInstaller;
-  final AutoUpdateService autoUpdateService;
+  final Function() setSkipCurrentInstaller;
+  final Function() installLocalInstaller;
 
   @override
   Widget build(BuildContext context) {
@@ -417,7 +442,7 @@ class InstallNewerVersionDialog extends StatelessWidget {
         OutlinedButton(
           onPressed: () async {
             Navigator.of(context).pop();
-            autoUpdateService.setSkipCurrentInstaller();
+            setSkipCurrentInstaller();
           },
           child: Text(AppLocalizations.of(context)!.skipThisVersion),
         ),
@@ -425,7 +450,7 @@ class InstallNewerVersionDialog extends StatelessWidget {
           onPressed: () async {
             Navigator.of(context).pop();
             try {
-              await autoUpdateService.installLocalInstaller();
+              await installLocalInstaller();
             } catch (e) {
               if (context.mounted) {
                 showAlertDialog(

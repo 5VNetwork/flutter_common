@@ -15,6 +15,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get no => 'No';
 
   @override
+  String hasNewerVersionDialog(String version) {
+    return 'New version $version available, update it?';
+  }
+
+  @override
   String newVersionDownloadedDialog(String version) {
     return 'New version $version downloaded, install it?';
   }

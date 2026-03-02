@@ -107,6 +107,12 @@ abstract class AppLocalizations {
   /// **'No'**
   String get no;
 
+  /// No description provided for @hasNewerVersionDialog.
+  ///
+  /// In en, this message translates to:
+  /// **'New version {version} available, update it?'**
+  String hasNewerVersionDialog(String version);
+
   /// No description provided for @newVersionDownloadedDialog.
   ///
   /// In en, this message translates to:

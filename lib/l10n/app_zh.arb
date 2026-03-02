@@ -3,6 +3,14 @@
     "@yes": {},
     "no": "不",
     "@no": {},
+    "hasNewerVersionDialog": "有新版本{version}可用，是否更新？",
+    "@hasNewerVersionDialog": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
     "newVersionDownloadedDialog": "新版本{version}已下载，是否安装？",
     "@newVersionDownloadedDialog": {
         "placeholders": {

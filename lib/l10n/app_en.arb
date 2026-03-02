@@ -3,6 +3,14 @@
     "@yes": {},
     "no": "No",
     "@no": {},
+    "hasNewerVersionDialog": "New version {version} available, update it?",
+    "@hasNewerVersionDialog": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
     "newVersionDownloadedDialog": "New version {version} downloaded, install it?",
     "@newVersionDownloadedDialog": {
         "placeholders": {
