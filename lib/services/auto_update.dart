@@ -7,6 +7,7 @@ import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_common/services/periodic.dart';
 import 'package:flutter_common/types/logger.dart';
 import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,7 +21,7 @@ import 'package:flutter_common/widgets/dialog.dart';
 /// When enabled, listeners will be notified when there is a DownloadedInstaller
 class AutoUpdateService {
   final String _currentVersion;
-  Timer? _timer;
+  PeriodicTask? _timer;
   final Future<void> Function(String url, String dest) _downloader;
   final String _assetName;
   final String _repository;
@@ -43,6 +44,8 @@ class AutoUpdateService {
     required String cacheDir,
     required String downloadUrl,
     Logger? logger,
+    bool autoCheck = true,
+    bool autoDownload = true,
     required void Function(GitHubRelease) onNewVersionAvailable,
     required void Function(DownloadedInstaller) onDownloadComplete,
   }) : _logger = logger,
@@ -55,7 +58,9 @@ class AutoUpdateService {
        _cacheDir = cacheDir,
        _downloadUrl = downloadUrl,
        _onNewVersionAvailable = onNewVersionAvailable,
-       _onDownloadComplete = onDownloadComplete {
+       _onDownloadComplete = onDownloadComplete,
+       _autoCheck = autoCheck,
+       _autoDownload = autoDownload {
     _resetTimer();
   }
 
@@ -65,14 +70,6 @@ class AutoUpdateService {
     } else {
       _pref.setString('downloadedInstaller', jsonEncode(installer.toJson()));
     }
-  }
-
-  int? get _lastUpdateCheckTime {
-    return _pref.getInt('lastUpdateCheckTime');
-  }
-
-  void _setLastUpdateCheckTime(int timestamp) {
-    _pref.setInt('lastUpdateCheckTime', timestamp);
   }
 
   String? get _skipVersion {
@@ -93,67 +90,28 @@ class AutoUpdateService {
     final json = _pref.getString('downloadedInstaller');
     if (json == null) return null;
     final installer = DownloadedInstaller.fromJson(jsonDecode(json));
-    // final localApkVersion = installer.version;
-    // if (localApkVersion == _currentVersion ||
-    //     !versionNewerThan(localApkVersion, _currentVersion)) {
-    //   _deleteLocalInstaller();
-    //   return null;
-    // }
     return installer;
   }
 
-  /// Check if enough time has passed since the last update check
-  bool _shouldCheckAndUpdate() {
-    if (_localInstaller != null) {
-      return true;
-    }
-
-    final lastCheckTime = _lastUpdateCheckTime;
-    if (lastCheckTime == null) {
-      // First time running, should check
-      return true;
-    }
-
-    final lastCheck = DateTime.fromMillisecondsSinceEpoch(lastCheckTime);
-    final now = DateTime.now();
-    final timeSinceLastCheck = now.difference(lastCheck);
-
-    // Check if 24 hours have passed
-    return timeSinceLastCheck.inHours >= 24;
-  }
-
-  /// Get the time remaining until the next update check
-  Duration _getTimeUntilNextCheck() {
-    final lastCheckTime = _lastUpdateCheckTime;
-    if (lastCheckTime == null) {
-      return Duration.zero;
-    }
-
-    final lastCheck = DateTime.fromMillisecondsSinceEpoch(lastCheckTime);
-    final now = DateTime.now();
-    final nextCheck = lastCheck.add(const Duration(hours: 24));
-
-    return nextCheck.difference(now);
-  }
-
-  bool get autoCheckLatestVersion =>
-      _pref.getBool('autoCheckLatestVersion') ?? true;
+  bool _autoCheck;
+  bool get autoCheckLatestVersion => _autoCheck;
   void setAutoCheckLatestVersion(bool value) {
-    _pref.setBool('autoCheckLatestVersion', value);
+    _autoCheck = value;
     _resetTimer();
   }
 
   void _resetTimer() {
-    if (autoUpdate || autoCheckLatestVersion) {
+    if (_autoDownload || _autoCheck) {
       _startChecking();
     } else {
       _stopChecking();
     }
   }
 
-  bool get autoUpdate => _pref.getBool('autoUpdate') ?? true;
-  void setAutoUpdate(bool value) {
-    _pref.setBool('autoUpdate', value);
+  bool _autoDownload;
+  bool get autoDownload => _autoDownload;
+  void setAutoDownload(bool value) {
+    _autoDownload = value;
     _resetTimer();
   }
 
@@ -162,19 +120,15 @@ class AutoUpdateService {
     if (_timer != null) return;
 
     _logger?.i('Starting auto-update service');
-    // Check if we need to check for updates based on last check time
-    if (_shouldCheckAndUpdate()) {
-      _check();
-    } else {
-      final timeUntilNextCheck = _getTimeUntilNextCheck();
-      _logger?.i(
-        'Last check was recent, next check in: ${timeUntilNextCheck.inHours}h ${timeUntilNextCheck.inMinutes % 60}m',
-      );
-    }
 
     // Schedule daily checks (24 hours)
     const dailyInterval = Duration(hours: 24);
-    _timer = Timer.periodic(dailyInterval, (_) => _check());
+    _timer = PeriodicTask(
+      sharedPreferences: _pref,
+      task: _check,
+      period: dailyInterval,
+      lastRunKey: 'lastUpdateCheckTime',
+    )..start();
 
     _logger?.i('Checking for updates scheduled to check daily');
   }
@@ -182,12 +136,12 @@ class AutoUpdateService {
   /// Stop automatic update checking
   void _stopChecking() {
     _logger?.i('Stopping checking for updates');
-    _timer?.cancel();
+    _timer?.stop();
     _timer = null;
   }
 
   /// Returns the latest release if there is a new version
-  Future<GitHubRelease?> _getLatestRelease() async {
+  Future<GitHubRelease?> getLatestRelease() async {
     // if (kDebugMode) {
     //   return GitHubRelease(
     //     tagName: '9.9.9',
@@ -216,48 +170,35 @@ class AutoUpdateService {
 
   /// Check for updates and install if there is a new version
   Future<void> _check() async {
-    _logger?.i('checkAndUpdate');
-    // check if there is a previously downloaded apk
-    // get newest version
-    final release = await _getLatestRelease();
+    _logger?.i('Checking for updates');
+    // if local installer exist
+    final localInstaller = _localInstaller;
+    if (localInstaller != null) {
+      if (localInstaller.version == _currentVersion ||
+          !versionNewerThan(localInstaller.version, _currentVersion)) {
+        _deleteLocalInstaller();
+        return;
+      } else {
+        return _onDownloadComplete(localInstaller);
+      }
+    }
+
+    final release = await getLatestRelease();
     if (release != null) {
       if (_skipVersion == release.version) {
         _logger?.d('skip this version ${release.version}');
         return;
       }
-      if (autoUpdate) {
+      if (autoDownload) {
         await _downloadToLocal(release);
       } else {
         _onNewVersionAvailable(release);
       }
     }
-    _setLastUpdateCheckTime(DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<void> _downloadToLocal(GitHubRelease release) async {
     try {
-      final newestVersion = release.version;
-      // if local apk exist
-      final localInstaller = _localInstaller;
-      if (localInstaller != null) {
-        final localVersion = localInstaller.version;
-        // if it is older than the newest version, delete it
-        if (localVersion != newestVersion) {
-          _logger?.d('local apk not newest, delete it $localInstaller');
-          await _deleteLocalInstaller();
-        } else {
-          if (_skipVersion == newestVersion) {
-            _logger?.d('skip this version, delete local apk $localInstaller');
-            await _deleteLocalInstaller();
-          } else {
-            _logger?.d('local apk is newest, notify listeners');
-            _onDownloadComplete(localInstaller);
-          }
-          return;
-        }
-        // no local apk, download it
-      }
-
       final newestDownloadUrl = '$_downloadUrl/$_assetName';
       DownloadedInstaller? installer;
       if (Platform.isAndroid) {
