@@ -168,6 +168,10 @@ class AutoUpdateService {
     );
   }
 
+  void checkAndUpdate() {
+    _check();
+  }
+
   /// Check for updates and install if there is a new version
   Future<void> _check() async {
     _logger?.i('Checking for updates');
@@ -197,7 +201,13 @@ class AutoUpdateService {
     }
   }
 
+  Completer<void>? _downloadCompleter;
   Future<void> _downloadToLocal(GitHubRelease release) async {
+    if (_downloadCompleter != null) {
+      return _downloadCompleter!.future;
+    }
+
+    _downloadCompleter = Completer<void>();
     try {
       final newestDownloadUrl = '$_downloadUrl/$_assetName';
       DownloadedInstaller? installer;
@@ -246,8 +256,12 @@ class AutoUpdateService {
         _setDownloadedInstallerPath(installer);
       }
       _onDownloadComplete(installer!);
+      _downloadCompleter!.complete();
     } catch (e, stackTrace) {
       _logger?.e('_downloadToLocal', error: e, stackTrace: stackTrace);
+      _downloadCompleter!.completeError(e);
+    } finally {
+      _downloadCompleter = null;
     }
   }
 
