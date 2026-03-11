@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_common/types/logger.dart';
 import 'package:http/http.dart' as http;
-import 'package:logger/web.dart';
-import 'package:flutter_common/common.dart' as flutter_common;
+import 'package:flutter_common/types/downloader.dart' as flutter_common;
 
 /// Download something and record traffic usage
 class Downloader implements flutter_common.Downloader {

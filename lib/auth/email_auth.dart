@@ -32,7 +32,7 @@ class _EmailAuthState extends State<EmailAuth> {
   Future<void> _loadDisposableEmailBlocklist() async {
     try {
       final content = await rootBundle.loadString(
-        'assets/disposable_email_blocklist.conf',
+        'packages/flutter_common/assets/disposable_email_blocklist.conf',
       );
       final domains = content
           .split('\n')
@@ -44,6 +44,7 @@ class _EmailAuthState extends State<EmailAuth> {
       });
     } catch (e) {
       // If blocklist fails to load, continue without blocking
+      debugPrint('Failed to load disposable email blocklist: $e');
     }
   }
 
