@@ -43,10 +43,6 @@ class AdWidget extends StatelessWidget {
           child: Card(
             margin: EdgeInsets.zero,
             elevation: 2,
-            clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
             child: GestureDetector(
               onTap: () {
                 launchUrl(Uri.parse(ad.website));
@@ -67,7 +63,7 @@ class AdWidget extends StatelessWidget {
           bottom: 0,
           right: 0,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 0),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
             ),
