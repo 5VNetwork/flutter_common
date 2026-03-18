@@ -119,7 +119,7 @@ class AdWantedCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  AppLocalizations.of(context)!.adWanted,
+                  AppLocalizations.of(context)?.adWanted ?? 'Ad Wanted',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
