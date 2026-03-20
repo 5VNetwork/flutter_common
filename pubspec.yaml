@@ -1,6 +1,6 @@
 name: flutter_common
 description: "Common functions used in our organization's apps"
-version: 0.0.3
+version: 0.0.4
 homepage: https://github.com/5vnetwork/flutter_common
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
