@@ -107,8 +107,8 @@ class SupabaseAuth extends AuthProvider {
           .attemptLightweightAuthentication();
       // or await googleSignIn.authenticate(); which will return a GoogleSignInAccount or throw an exception
       if (googleUser == null) {
-        // googleUser = await googleSignIn.authenticate();
-        throw AuthException('Failed to sign in with Google.');
+        googleUser = await googleSignIn.authenticate();
+        // throw AuthException('Failed to sign in with Google.');
       }
       /// Authorization is required to obtain the access token with the appropriate scopes for Supabase authentication,
       /// while also granting permission to access user information.
