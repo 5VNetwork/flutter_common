@@ -98,19 +98,6 @@ bool isDomain(String domain) {
   return domainRegExp.hasMatch(domain);
 }
 
-enum CDN {
-  cloudflare();
-
-  const CDN();
-}
-
-CDN? ipToCdn(String ip) {
-  if (ipIsCfCdn(ip)) {
-    return CDN.cloudflare;
-  }
-  return null;
-}
-
 double bytesToMbps(int bytes) {
   return bytes / 1024 / 1024 * 8;
 }
@@ -121,6 +108,14 @@ int mbpsToBytes(double mbps) {
 
 bool isValidIp(String ip) {
   return InternetAddress.tryParse(ip) != null;
+}
+
+/// Remove ipv6 brackets from ip
+String normalizeIp(String ip) {
+  if (ip.startsWith('[') && ip.endsWith(']')) {
+    return ip.substring(1, ip.length - 1);
+  }
+  return ip;
 }
 
 bool isValidPort(String port) {
