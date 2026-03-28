@@ -18,10 +18,12 @@ class SignInPage extends StatefulWidget {
     required this.showApple,
     required this.termOfServiceUrl,
     required this.privacyPolicyUrl,
+    this.showAppleNotification = true,
   });
   final bool showGoogle;
   final bool showMicrosoft;
   final bool showApple;
+  final bool showAppleNotification;
   final String termOfServiceUrl;
   final String privacyPolicyUrl;
 
@@ -128,7 +130,7 @@ class _SignInPageState extends State<SignInPage> {
   }
 
   Future<bool> getUserConsent() async {
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (widget.showAppleNotification && (Platform.isIOS || Platform.isMacOS)) {
       final result = await showDialog<bool?>(
         context: context,
         builder: (context) => AlertDialog(
@@ -229,7 +231,9 @@ class _SignInPageState extends State<SignInPage> {
                       try {
                         await authProvider.signInWithGoogle();
                       } catch (e, stackTrace) {
-                        debugPrint('Failed to sign in with Google: $e\n$stackTrace');
+                        debugPrint(
+                          'Failed to sign in with Google: $e\n$stackTrace',
+                        );
                         scaffoldMessenger.showSnackBar(
                           SnackBar(content: Text(e.toString())),
                         );
