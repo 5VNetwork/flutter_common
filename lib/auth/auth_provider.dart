@@ -14,6 +14,7 @@ abstract class AuthProvider with ChangeNotifier {
   Future<void> signInWithMicrosoft();
   Future<void> signInWithEmailOtp(String email);
   Future<void> verifyEmailOtp(String email, String otp);
+  Future<void> signInWithEmailPassword(String email, String password);
   Future<void> logOut();
   Stream<Session?> get sessionStreams;
   Session? get currentSession;
@@ -161,6 +162,14 @@ class SupabaseAuth extends AuthProvider {
       email: email,
       token: otp,
       type: OtpType.email,
+    );
+  }
+
+  @override
+  Future<void> signInWithEmailPassword(String email, String password) async {
+    await supabase.auth.signInWithPassword(
+      email: email,
+      password: password,
     );
   }
 

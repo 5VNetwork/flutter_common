@@ -15,11 +15,14 @@ class EmailAuth extends StatefulWidget {
 class _EmailAuthState extends State<EmailAuth> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _useOtp = true;
   bool _isCounting = false;
   bool _isSendingOtp = false;
   bool _isLoggingIn = false;
   String? _sendOtpError;
   String? _emailError;
+  String? _passwordError;
   Set<String> _disposableEmailDomains = {};
 
   @override
@@ -27,6 +30,7 @@ class _EmailAuthState extends State<EmailAuth> {
     super.initState();
     _loadDisposableEmailBlocklist();
     _emailController.addListener(_validateEmail);
+    _passwordController.addListener(_validatePassword);
   }
 
   Future<void> _loadDisposableEmailBlocklist() async {
@@ -72,11 +76,20 @@ class _EmailAuthState extends State<EmailAuth> {
     }
   }
 
+  void _validatePassword() {
+    final password = _passwordController.text;
+    setState(() {
+      _passwordError = password.isEmpty ? 'Password required' : null;
+    });
+  }
+
   @override
   void dispose() {
     _emailController.removeListener(_validateEmail);
     _emailController.dispose();
     _otpController.dispose();
+    _passwordController.removeListener(_validatePassword);
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -92,91 +105,148 @@ class _EmailAuthState extends State<EmailAuth> {
         ),
       ),
       const SizedBox(height: 10),
-      TextField(
-        controller: _otpController,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: InputDecoration(
-          border: const OutlineInputBorder(),
-          labelText: AppLocalizations.of(context)!.verificationCode,
-          errorText: _sendOtpError,
-          errorMaxLines: 10,
-          suffixIcon: _isCounting
-              ? Padding(
-                  padding: const EdgeInsets.only(right: 5.0),
-                  child: SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: Center(
-                      child: CountdownTimer(
-                        textStyle: Theme.of(context).textTheme.bodyMedium
-                            ?.copyWith(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                        onFinished: () {
-                          setState(() => _isCounting = !_isCounting);
-                        },
+      if (_useOtp)
+        TextField(
+          controller: _otpController,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            labelText: AppLocalizations.of(context)!.verificationCode,
+            errorText: _sendOtpError,
+            errorMaxLines: 10,
+            suffixIcon: _isCounting
+                ? Padding(
+                    padding: const EdgeInsets.only(right: 5.0),
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: Center(
+                        child: CountdownTimer(
+                          textStyle: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                          onFinished: () {
+                            setState(() => _isCounting = !_isCounting);
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                )
-              : TextButton(
-                  onPressed: () async {
-                    if (_emailController.text.isNotEmpty &&
-                        emailRegExp.hasMatch(_emailController.text) &&
-                        _emailError == null) {
-                      setState(() {
-                        _isSendingOtp = true;
-                        _sendOtpError = null;
-                      });
-                      try {
-                        await context.read<AuthProvider>().signInWithEmailOtp(
-                          _emailController.text,
-                        );
-                      } catch (e) {
-                        setState(() => _sendOtpError = e.toString());
+                  )
+                : TextButton(
+                    onPressed: () async {
+                      final email = _emailController.text.trim();
+                      if (email.isNotEmpty &&
+                          emailRegExp.hasMatch(email) &&
+                          _emailError == null) {
+                        setState(() {
+                          _isSendingOtp = true;
+                          _sendOtpError = null;
+                        });
+                        try {
+                          await context.read<AuthProvider>().signInWithEmailOtp(
+                            email,
+                          );
+                        } catch (e) {
+                          setState(() => _sendOtpError = e.toString());
+                        }
+                        setState(() {
+                          _isCounting = true;
+                          _isSendingOtp = false;
+                        });
                       }
-                      setState(() {
-                        _isCounting = true;
-                        _isSendingOtp = false;
-                      });
-                    }
-                  },
-                  child: _isSendingOtp
-                      ? const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(AppLocalizations.of(context)!.send),
-                ),
+                    },
+                    child: _isSendingOtp
+                        ? const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(AppLocalizations.of(context)!.send),
+                  ),
+          ),
+        )
+      else
+        TextField(
+          controller: _passwordController,
+          obscureText: true,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            labelText: 'Password',
+            errorText: _passwordError,
+          ),
+        ),
+      const SizedBox(height: 2),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton(
+          onPressed: () {
+            setState(() {
+              _useOtp = !_useOtp;
+              _isCounting = false;
+              _isSendingOtp = false;
+              _sendOtpError = null;
+              _passwordError = null;
+            });
+          },
+          child: Text(
+            _useOtp ? 'Use password' : 'Use OTP',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
         ),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 8),
       FilledButton(
         onPressed: () async {
           final scaffoldMessenger = ScaffoldMessenger.of(context);
-          if (_emailController.text.isNotEmpty &&
-              emailRegExp.hasMatch(_emailController.text) &&
-              _emailError == null &&
-              _otpController.text.isNotEmpty) {
-            setState(() => _isLoggingIn = true);
-            try {
-              await context.read<AuthProvider>().verifyEmailOtp(
-                _emailController.text,
-                _otpController.text,
-              );
-              if (mounted) {
-                Navigator.of(context).pop();
+          final email = _emailController.text.trim();
+          if (_useOtp) {
+            if (email.isNotEmpty &&
+                emailRegExp.hasMatch(email) &&
+                _emailError == null &&
+                _otpController.text.trim().isNotEmpty) {
+              setState(() => _isLoggingIn = true);
+              try {
+                await context.read<AuthProvider>().verifyEmailOtp(
+                  email,
+                  _otpController.text.trim(),
+                );
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              } catch (e) {
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(content: Text(e.toString())),
+                );
+              } finally {
+                setState(() => _isLoggingIn = false);
               }
-            } catch (e) {
-              scaffoldMessenger.showSnackBar(
-                SnackBar(content: Text(e.toString())),
-              );
-            } finally {
-              setState(() => _isLoggingIn = false);
+            }
+          } else {
+            final password = _passwordController.text.trim();
+            if (email.isNotEmpty &&
+                emailRegExp.hasMatch(email) &&
+                _emailError == null &&
+                password.isNotEmpty) {
+              setState(() => _isLoggingIn = true);
+              try {
+                await context.read<AuthProvider>().signInWithEmailPassword(
+                  email,
+                  password,
+                );
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
+              } catch (e) {
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(content: Text(e.toString())),
+                );
+              } finally {
+                setState(() => _isLoggingIn = false);
+              }
             }
           }
         },
