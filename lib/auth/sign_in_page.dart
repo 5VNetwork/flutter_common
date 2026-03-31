@@ -167,7 +167,7 @@ class _SignInPageState extends State<SignInPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                AppLocalizations.of(context)!.login,
+                AppLocalizations.of(context)?.login ?? 'Login',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 10),
