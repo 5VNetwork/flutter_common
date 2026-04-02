@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_common/common.dart';
 import 'package:flutter_common/widgets/app_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -31,16 +33,23 @@ class SignInPage extends StatefulWidget {
   State<SignInPage> createState() => _SignInPageState();
 }
 
+const eulaUrl =
+    'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+
 class _SignInPageState extends State<SignInPage> {
   bool _isLoggingIn = false;
 
   Widget getUserAgreement(BuildContext context) {
-    final style = TextButton.styleFrom(
-      overlayColor: Colors.transparent,
-      padding: EdgeInsets.zero,
-      alignment: Alignment.bottomCenter,
-      minimumSize: Size(0, 17),
-    );
+    final linkStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+        );
+    TextSpan linkSpan(String text, String url) {
+      return TextSpan(
+        text: text,
+        style: linkStyle,
+        recognizer: TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse(url)),
+      );
+    }
     switch (Localizations.localeOf(context).languageCode) {
       case 'zh':
         return Text.rich(
@@ -48,40 +57,14 @@ class _SignInPageState extends State<SignInPage> {
           style: Theme.of(context).textTheme.bodySmall,
           TextSpan(
             children: [
-              TextSpan(text: '登录即表示您同意'),
-              WidgetSpan(
-                alignment: PlaceholderAlignment.baseline,
-                baseline: TextBaseline.alphabetic,
-                child: TextButton(
-                  style: style,
-                  onPressed: () {
-                    launchUrl(Uri.parse(widget.termOfServiceUrl));
-                  },
-                  child: Text(
-                    '用户协议',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-              TextSpan(text: '并确认已阅读'),
-              WidgetSpan(
-                alignment: PlaceholderAlignment.baseline,
-                baseline: TextBaseline.alphabetic,
-                child: TextButton(
-                  style: style,
-                  onPressed: () {
-                    launchUrl(Uri.parse(widget.privacyPolicyUrl));
-                  },
-                  child: Text(
-                    '隐私政策',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
+              const TextSpan(text: '登录即表示您同意'),
+              linkSpan('用户协议', widget.termOfServiceUrl),
+              if (applePlatform) ...[
+                const TextSpan(text: '、'),
+                linkSpan('EULA', eulaUrl),
+              ],
+              const TextSpan(text: '并确认已阅读'),
+              linkSpan('隐私政策', widget.privacyPolicyUrl),
             ],
           ),
         );
@@ -91,36 +74,14 @@ class _SignInPageState extends State<SignInPage> {
           style: Theme.of(context).textTheme.bodySmall,
           TextSpan(
             children: [
-              TextSpan(text: 'By logging in, you agree to the '),
-              WidgetSpan(
-                child: TextButton(
-                  style: style,
-                  onPressed: () {
-                    launchUrl(Uri.parse(widget.termOfServiceUrl));
-                  },
-                  child: Text(
-                    'Term of Service',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-              TextSpan(text: ' and acknowledge that you have read our '),
-              WidgetSpan(
-                child: TextButton(
-                  style: style,
-                  onPressed: () {
-                    launchUrl(Uri.parse(widget.privacyPolicyUrl));
-                  },
-                  child: Text(
-                    'Privacy Policy',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
+              const TextSpan(text: 'By logging in, you agree to the '),
+              linkSpan('Term of Service', widget.termOfServiceUrl),
+              if (applePlatform) ...[
+                const TextSpan(text: ', '),
+                linkSpan('EULA', eulaUrl),
+              ],
+              const TextSpan(text: ' and acknowledge that you have read our '),
+              linkSpan('Privacy Policy', widget.privacyPolicyUrl),
             ],
           ),
         );
