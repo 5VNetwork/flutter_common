@@ -16,7 +16,7 @@ Widget getCountryIcon(
   return SvgPicture(
     height: height,
     width: width,
-    AssetBytesLoader('assets/icons/flags/${countryCode.toLowerCase()}.svg.vec'),
+    AssetBytesLoader('packages/country/assets/flags/${countryCode.toLowerCase()}.svg.vec'),
   );
 }
 
