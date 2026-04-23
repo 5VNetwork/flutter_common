@@ -40,21 +40,20 @@ class AdWidget extends StatelessWidget {
         SizedBox(
           width: fittedSize.width,
           height: fittedSize.height,
-          child: Card(
-            margin: EdgeInsets.zero,
-            elevation: 2,
-            child: GestureDetector(
-              onTap: () {
-                launchUrl(Uri.parse(ad.website));
-              },
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: Image(
-                  image: ad.imageProvider!,
-                  fit: BoxFit.fill,
-                  width: fittedSize.width,
-                  height: fittedSize.height,
-                ),
+          child: GestureDetector(
+            onTap: () {
+              launchUrl(
+                Uri.parse(ad.website),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Image(
+                image: ad.imageProvider!,
+                fit: BoxFit.fill,
+                width: fittedSize.width,
+                height: fittedSize.height,
               ),
             ),
           ),

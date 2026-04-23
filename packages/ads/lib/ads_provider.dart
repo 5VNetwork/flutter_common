@@ -21,6 +21,7 @@ import 'dart:math';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_common/common.dart';
 import 'package:flutter_common/types/downloader.dart';
@@ -79,9 +80,14 @@ class AdsProvider with ChangeNotifier {
   final DownloadFunction _downloadFunction;
   final Duration _refreshInterval;
 
+  bool userInChina(SharedPreferences persistentStateRepo) {
+    return PlatformDispatcher.instance.locale.countryCode == 'CN' ||
+        PlatformDispatcher.instance.locale.languageCode == 'zh';
+  }
+
   /// Move to next ad that fits within constraints
   Ad? getNextAd({double? maxHeight, double? maxWidth}) {
-    if (applePlatform) {
+    if (applePlatform && !userInChina(_sharedPreferences)) {
       return null;
     }
     // If no ads to show, swap the queues
@@ -91,9 +97,9 @@ class AdsProvider with ChangeNotifier {
       _adsToShow.addAll(_adsShown);
       _adsShown.clear();
       // Shuffle the ads for variety
-      final adsList = _adsToShow.toList()..shuffle(Random());
-      _adsToShow.clear();
-      _adsToShow.addAll(adsList);
+      // final adsList = _adsToShow.toList()..shuffle(Random());
+      // _adsToShow.clear();
+      // _adsToShow.addAll(adsList);
       _logger?.i('Swapped ad queues, reset with ${_adsToShow.length} ads');
     }
 
@@ -138,6 +144,7 @@ class AdsProvider with ChangeNotifier {
     );
     _adsToShow.remove(selectedAd);
     _adsShown.add(selectedAd);
+    _logger?.i('Showing ad: ${selectedAd.name}');
     return selectedAd;
   }
 
