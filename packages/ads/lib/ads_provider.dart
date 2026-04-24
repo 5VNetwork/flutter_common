@@ -104,8 +104,49 @@ class AdsProvider with ChangeNotifier {
     }
 
     // Iterate through ads to find one that meets constraints
+    Ad? selectedAd = _getSuitableAd(
+      ads: _adsToShow,
+      maxHeight: maxHeight,
+      maxWidth: maxWidth,
+    );
+    // pick one from _adsShown if no suitable ad found in _adsToShow
+    if (selectedAd == null && _adsShown.isNotEmpty) {
+      selectedAd = _getSuitableAdFromRandomStart(
+        ads: _adsShown,
+        maxHeight: maxHeight,
+        maxWidth: maxWidth,
+      );
+      if (selectedAd == null) {
+        return null;
+      }
+      selectedAd.imageProvider ??= FileImage(
+        File(path.join(_adsDirectory, selectedAd.name)),
+      );
+      _logger?.i('Showing ad: ${selectedAd.name}');
+      return selectedAd;
+    }
+
+    if (selectedAd == null) {
+      return null;
+    }
+    // If we found a suitable ad, remove it from _adsToShow and add to _adsShown
+    selectedAd.imageProvider ??= FileImage(
+      File(path.join(_adsDirectory, selectedAd.name)),
+    );
+    _adsToShow.remove(selectedAd);
+    _adsShown.add(selectedAd);
+    _logger?.i('Showing ad: ${selectedAd.name}');
+    return selectedAd;
+  }
+
+  Ad? _getSuitableAd({
+    required Queue<Ad> ads,
+    double? maxHeight,
+    double? maxWidth,
+  }) {
+    // Iterate through ads to find one that meets constraints
     Ad? selectedAd;
-    final iterator = _adsToShow.iterator;
+    final iterator = ads.iterator;
     while (iterator.moveNext()) {
       final ad = iterator.current;
       final preferredSize = ad.fittedSize();
@@ -120,7 +161,7 @@ class AdsProvider with ChangeNotifier {
     }
     // if no ad meets constraints, try to find one that meets constraints * 1.5
     if (selectedAd == null) {
-      final relaxedIterator = _adsToShow.iterator;
+      final relaxedIterator = ads.iterator;
       while (relaxedIterator.moveNext()) {
         final ad = relaxedIterator.current;
         final preferredSize = ad.fittedSize();
@@ -134,18 +175,61 @@ class AdsProvider with ChangeNotifier {
         break;
       }
     }
-    if (selectedAd == null) {
-      return null;
+    return selectedAd;
+  }
+
+  Ad? _getSuitableAdFromRandomStart({
+    required Queue<Ad> ads,
+    double? maxHeight,
+    double? maxWidth,
+  }) {
+    if (ads.isEmpty) return null;
+    final start = Random().nextInt(ads.length);
+
+    int index = 0;
+    var iterator = ads.iterator;
+    final relaxedMaxHeight = maxHeight != null ? maxHeight * 1.5 : null;
+    final relaxedMaxWidth = maxWidth != null ? maxWidth * 1.5 : null;
+    // Relaxed pass: [start, end)
+    while (iterator.moveNext()) {
+      if (index < start) {
+        index++;
+        continue;
+      }
+      final ad = iterator.current;
+      final preferredSize = ad.fittedSize();
+      if (relaxedMaxHeight != null && preferredSize.height > relaxedMaxHeight) {
+        index++;
+        continue;
+      }
+      if (relaxedMaxWidth != null && preferredSize.width > relaxedMaxWidth) {
+        index++;
+        continue;
+      }
+      return ad;
     }
 
-    // If we found a suitable ad, remove it from _adsToShow and add to _adsShown
-    selectedAd.imageProvider ??= FileImage(
-      File(path.join(_adsDirectory, selectedAd.name)),
-    );
-    _adsToShow.remove(selectedAd);
-    _adsShown.add(selectedAd);
-    _logger?.i('Showing ad: ${selectedAd.name}');
-    return selectedAd;
+    index = 0;
+    iterator = ads.iterator;
+    // Relaxed pass: [0, start)
+    while (iterator.moveNext()) {
+      if (index >= start) {
+        break;
+      }
+      final ad = iterator.current;
+      final preferredSize = ad.fittedSize();
+      if (relaxedMaxHeight != null && preferredSize.height > relaxedMaxHeight) {
+        index++;
+        continue;
+      }
+      if (relaxedMaxWidth != null && preferredSize.width > relaxedMaxWidth) {
+        index++;
+        continue;
+      }
+      return ad;
+    }
+
+    return null;
   }
 
   DateTime? get _lastAdsFetchTime {
@@ -316,11 +400,14 @@ class Ad {
     return sourceWidth / sourceHeight;
   }
 
+  /// Return the layout size of the ad. (The size that will be used to display the ad)
   Size fittedSize({double? maxWidth, double? maxHeight}) {
     var fittedWidth = width.toDouble();
     var fittedHeight = height.toDouble();
     final aspectRatio = imageAspectRatio;
 
+    // Maintain the aspect ratio of the image, fit it within the original desired container,
+    // such as 320x50, 320x100, 468x60, 728x90, etc.
     if (fittedWidth > 0 && fittedHeight > 0) {
       final preferredHeight = fittedWidth / aspectRatio;
       if (preferredHeight <= fittedHeight) {
@@ -330,6 +417,7 @@ class Ad {
       }
     }
 
+    // Fit the desired container to the constraints
     if (maxWidth != null && fittedWidth > maxWidth) {
       final scale = maxWidth / fittedWidth;
       fittedWidth *= scale;

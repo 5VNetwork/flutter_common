@@ -81,7 +81,7 @@ class AdWidget extends StatelessWidget {
   }
 }
 
-const adWantedUrl = 'https://vx.5vnetwork.com/advertise';
+const adWantedUrl = 'https://vx.5vnetwork.com/zh/advertise';
 
 class AdWantedCard extends StatelessWidget {
   const AdWantedCard({super.key});
@@ -208,19 +208,55 @@ class _AdsState extends State<Ads> {
   }
 }
 
-class BannerAdWidget extends StatelessWidget {
+class BannerAdWidget extends StatefulWidget {
   const BannerAdWidget({super.key});
+
+  @override
+  State<BannerAdWidget> createState() => _BannerAdWidgetState();
+}
+
+class _BannerAdWidgetState extends State<BannerAdWidget> {
+  Timer? _timer;
+  Ad? _currentAd;
+  double? _lastMaxHeight;
+  double? _lastMaxWidth;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      final ad = context.read<AdsProvider>().getNextAd(
+        maxHeight: _lastMaxHeight,
+        maxWidth: _lastMaxWidth,
+      );
+      setState(() {
+        _currentAd = ad;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Keep watch so ad inventory updates can trigger rebuilds.
+    final adsProvider = context.watch<AdsProvider>();
     return LayoutBuilder(
       builder: (ctx, c) {
-        final ad = context.watch<AdsProvider>().getNextAd(
-          maxHeight: c.maxHeight,
-          maxWidth: c.maxWidth,
-        );
+        _lastMaxHeight = c.maxHeight;
+        _lastMaxWidth = c.maxWidth;
+        final ad =
+            _currentAd ??
+            adsProvider.getNextAd(maxHeight: c.maxHeight, maxWidth: c.maxWidth);
         if (ad == null) {
           return const AdWantedCard();
         }
+        _currentAd = ad;
         return AdWidget(ad: ad, maxHeight: c.maxHeight, maxWidth: c.maxWidth);
       },
     );
