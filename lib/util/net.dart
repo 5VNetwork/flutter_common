@@ -90,6 +90,13 @@ Future<int> getUnusedPort([InternetAddress? address]) {
   });
 }
 
+Future<bool> isPortAvailable(int port) {
+  return ServerSocket.bind(InternetAddress.anyIPv4, port).then((socket) async {
+    await socket.close();
+    return true;
+  });
+}
+
 // TODO
 bool isDomain(String domain) {
   final domainRegExp = RegExp(

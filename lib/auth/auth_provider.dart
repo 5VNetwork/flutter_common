@@ -30,6 +30,7 @@ class SupabaseAuth extends AuthProvider {
   }) {
     _userController = BehaviorSubject<Session?>.seeded(currentSession);
     supabase.auth.onAuthStateChange.forEach((event) {
+      debugPrint('auth state changed: ${event}');
       if (event.session != null) {
         _userController.add(event.session);
       } else {
