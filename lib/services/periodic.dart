@@ -36,6 +36,7 @@ class PeriodicTask {
   Duration _period;
   final String _lastRunKey;
   Timer? _timer;
+  bool _isExecuting = false;
 
   /// Creates a new PeriodicTask instance.
   ///
@@ -134,6 +135,10 @@ class PeriodicTask {
 
   /// Executes the task and schedules the next run.
   Future<void> _executeTask() async {
+    if (_isExecuting) {
+      return;
+    }
+    _isExecuting = true;
     final taskStartTime = DateTime.now();
 
     try {
@@ -143,13 +148,15 @@ class PeriodicTask {
     } catch (e) {
       // Task failed, don't update the last run time
       // The next run will still be scheduled based on the previous successful run
+    } finally {
+      _isExecuting = false;
     }
 
-    // Schedule the next periodic run
-    // Cancel the current timer and create a periodic one
+    // Schedule the next run only after this run finishes.
+    // Using Timer.periodic with an async task can cause overlapping executions.
     if (_timer != null) {
       _timer?.cancel();
-      _timer = Timer.periodic(_period, (_) => _executeTask());
+      _timer = Timer(_period, _executeTask);
     }
   }
 
@@ -236,6 +243,7 @@ class ScheduledTask {
   final String _lastRunKey;
   final NowProvider _now;
   Timer? _timer;
+  bool _isExecuting = false;
 
   /// Creates a new ScheduledTask instance.
   ///
@@ -493,6 +501,10 @@ class ScheduledTask {
 
   /// Executes the task and schedules the next run.
   Future<void> _executeTask() async {
+    if (_isExecuting) {
+      return;
+    }
+    _isExecuting = true;
     final taskStartTime = _now();
 
     try {
@@ -502,6 +514,8 @@ class ScheduledTask {
     } catch (e) {
       // Task failed, don't update the last run time
       // The next run will still be scheduled based on the previous successful run
+    } finally {
+      _isExecuting = false;
     }
 
     // Schedule the next run based on the schedule frequency
