@@ -53,9 +53,6 @@ class SupabaseAuth extends AuthProvider {
 
   @override
   Session? get currentSession {
-    if (supabase.auth.currentSession == null) {
-      return null;
-    }
     return supabase.auth.currentSession;
   }
 
@@ -112,6 +109,7 @@ class SupabaseAuth extends AuthProvider {
         googleUser = await googleSignIn.authenticate();
         // throw AuthException('Failed to sign in with Google.');
       }
+
       /// Authorization is required to obtain the access token with the appropriate scopes for Supabase authentication,
       /// while also granting permission to access user information.
       final authorization =
@@ -168,10 +166,7 @@ class SupabaseAuth extends AuthProvider {
 
   @override
   Future<void> signInWithEmailPassword(String email, String password) async {
-    await supabase.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+    await supabase.auth.signInWithPassword(email: email, password: password);
   }
 
   @override

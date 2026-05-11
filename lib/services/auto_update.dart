@@ -201,13 +201,13 @@ class AutoUpdateService {
     }
   }
 
-  Completer<void>? _downloadCompleter;
+  Completer<void>? downloadCompleter;
   Future<void> _downloadToLocal(GitHubRelease release) async {
-    if (_downloadCompleter != null) {
-      return _downloadCompleter!.future;
+    if (downloadCompleter != null) {
+      return downloadCompleter!.future;
     }
 
-    _downloadCompleter = Completer<void>();
+    downloadCompleter = Completer<void>();
     try {
       final newestDownloadUrl = '$_downloadUrl/$_assetName';
       DownloadedInstaller? installer;
@@ -256,12 +256,12 @@ class AutoUpdateService {
         _setDownloadedInstallerPath(installer);
       }
       _onDownloadComplete(installer!);
-      _downloadCompleter!.complete();
+      downloadCompleter!.complete();
     } catch (e, stackTrace) {
       _logger?.e('_downloadToLocal', error: e, stackTrace: stackTrace);
-      _downloadCompleter!.completeError(e);
+      downloadCompleter!.completeError(e);
     } finally {
-      _downloadCompleter = null;
+      downloadCompleter = null;
     }
   }
 
