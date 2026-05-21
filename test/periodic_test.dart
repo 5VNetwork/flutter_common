@@ -862,5 +862,31 @@ void main() {
       expect(task.isRunning, isTrue);
       task.stop();
     });
+
+    test(
+        'daily: failed run does not retry immediately when scheduled time passed',
+        () async {
+      final nineAmBeijingUtc = DateTime.utc(2025, 2, 15, 1, 0);
+      var executionCount = 0;
+      final task = ScheduledTask(
+        sharedPreferences: prefs,
+        task: () async {
+          executionCount++;
+          throw Exception('fetch failed');
+        },
+        hour: 8,
+        minute: 0,
+        timeZone: 8,
+        lastRunKey: testKey,
+        minRetryDelay: const Duration(milliseconds: 200),
+        now: () => nineAmBeijingUtc,
+      );
+      task.start();
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(executionCount, equals(1));
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(executionCount, equals(1));
+      task.stop();
+    });
   });
 }

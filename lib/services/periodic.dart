@@ -241,6 +241,7 @@ class ScheduledTask {
   final int? _dayOfMonth; // 1-31 for monthly
   final int _timeZone; // UTC offset in hours (e.g., 8 for UTC+8, -5 for UTC-5)
   final String _lastRunKey;
+  final Duration _minRetryDelay;
   final NowProvider _now;
   Timer? _timer;
   bool _isExecuting = false;
@@ -259,6 +260,8 @@ class ScheduledTask {
   /// [timeZone] - The UTC offset in hours (e.g., 8 for UTC+8 Beijing time, -5 for UTC-5 EST).
   ///   Defaults to 0 (UTC). Range is typically -12 to +14.
   /// [lastRunKey] - The key to use in SharedPreferences for storing last run time
+  /// [minRetryDelay] - Minimum wait before retrying after a failed run. Prevents
+  ///   tight loops when the scheduled time has passed but [lastRunKey] was not updated.
   /// [now] - Optional provider for current time. Used for deterministic testing.
   ScheduledTask({
     required SharedPreferences sharedPreferences,
@@ -270,6 +273,7 @@ class ScheduledTask {
     int? dayOfMonth,
     int timeZone = 0,
     required String lastRunKey,
+    Duration minRetryDelay = const Duration(minutes: 1),
     NowProvider? now,
   }) : _prefs = sharedPreferences,
        _task = task,
@@ -280,7 +284,11 @@ class ScheduledTask {
        _dayOfMonth = dayOfMonth,
        _timeZone = timeZone,
        _lastRunKey = lastRunKey,
+       _minRetryDelay = minRetryDelay,
        _now = now ?? DateTime.now {
+    if (minRetryDelay.isNegative) {
+      throw ArgumentError('minRetryDelay cannot be negative');
+    }
     if (hour < 0 || hour > 23) {
       throw ArgumentError('Hour must be between 0 and 23');
     }
@@ -491,8 +499,12 @@ class ScheduledTask {
   }
 
   /// Schedules the next run of the task.
-  void _scheduleNextRun() {
-    final delay = _calculateNextRunDelay();
+  void _scheduleNextRun({bool afterFailure = false}) {
+    _timer?.cancel();
+    var delay = _calculateNextRunDelay();
+    if (afterFailure && delay < _minRetryDelay) {
+      delay = _minRetryDelay;
+    }
 
     _timer = Timer(delay, () {
       _executeTask();
@@ -506,9 +518,11 @@ class ScheduledTask {
     }
     _isExecuting = true;
     final taskStartTime = _now();
+    var succeeded = false;
 
     try {
       await _task();
+      succeeded = true;
       // Task completed successfully, save the timestamp
       await _prefs.setInt(_lastRunKey, taskStartTime.millisecondsSinceEpoch);
     } catch (e) {
@@ -520,7 +534,7 @@ class ScheduledTask {
 
     // Schedule the next run based on the schedule frequency
     if (_timer != null) {
-      _scheduleNextRun();
+      _scheduleNextRun(afterFailure: !succeeded);
     }
   }
 
