@@ -24,6 +24,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_common/common.dart';
+import 'package:flutter_common/services/periodic.dart';
 import 'package:flutter_common/types/downloader.dart';
 import 'package:flutter_common/types/logger.dart';
 import 'package:path/path.dart' as path;
@@ -42,26 +43,31 @@ class AdsProvider with ChangeNotifier {
        _sharedPreferences = sharedPreferences,
        _downloadFunction = downloadFunction,
        _logger = logger,
-       _refreshInterval = refreshInterval {}
+       _refreshInterval = refreshInterval {
+    _periodicTask = PeriodicTask(
+      sharedPreferences: sharedPreferences,
+      task: _fetchAds,
+      lastRunKey: 'lastAdsFetchTime',
+      period: refreshInterval,
+    );
+  }
 
-  bool running = false;
   final Logger? _logger;
+  late final PeriodicTask _periodicTask;
 
   void start() {
-    if (running) return;
     _logger?.d('Starting ads provider');
     _loadAds();
-    _startPeriodicFetchAds();
-    running = true;
+    _periodicTask.start();
   }
 
   void stop() {
     _logger?.d('Stopping ads provider');
-    running = false;
     _timer?.cancel();
     _timer = null;
     _adsToShow.clear();
     _adsShown.clear();
+    _periodicTask.stop();
   }
 
   // LinkedList for ads to be shown
@@ -100,7 +106,7 @@ class AdsProvider with ChangeNotifier {
       // final adsList = _adsToShow.toList()..shuffle(Random());
       // _adsToShow.clear();
       // _adsToShow.addAll(adsList);
-      _logger?.i('Swapped ad queues, reset with ${_adsToShow.length} ads');
+      // _logger?.i('Swapped ad queues, reset with ${_adsToShow.length} ads');
     }
 
     // Iterate through ads to find one that meets constraints
@@ -122,7 +128,7 @@ class AdsProvider with ChangeNotifier {
       selectedAd.imageProvider ??= FileImage(
         File(path.join(_adsDirectory, selectedAd.name)),
       );
-      _logger?.i('Showing ad: ${selectedAd.name}');
+      // _logger?.d('Showing ad: ${selectedAd.name}');
       return selectedAd;
     }
 
@@ -135,7 +141,7 @@ class AdsProvider with ChangeNotifier {
     );
     _adsToShow.remove(selectedAd);
     _adsShown.add(selectedAd);
-    _logger?.i('Showing ad: ${selectedAd.name}');
+    // _logger?.i('Showing ad: ${selectedAd.name}');
     return selectedAd;
   }
 
@@ -232,12 +238,6 @@ class AdsProvider with ChangeNotifier {
     return null;
   }
 
-  DateTime? get _lastAdsFetchTime {
-    final time = _sharedPreferences.getInt('lastAdsFetchTime');
-    if (time == null) return null;
-    return DateTime.fromMillisecondsSinceEpoch(time);
-  }
-
   void _setLastAdsFetchTime(DateTime time) {
     _sharedPreferences.setInt('lastAdsFetchTime', time.millisecondsSinceEpoch);
   }
@@ -314,7 +314,6 @@ class AdsProvider with ChangeNotifier {
   Future<void> _fetchAds() async {
     try {
       await _downloadZip();
-      _setLastAdsFetchTime(DateTime.now());
       _loadAds();
     } catch (e) {
       _logger?.e('Error fetching ads: $e');
@@ -338,28 +337,6 @@ class AdsProvider with ChangeNotifier {
       ad.imageProvider = FileImage(File(path.join(_adsDirectory, ad.name)));
     }
     return loadedAds;
-  }
-
-  /// Start a timer to check daily for new ads
-  void _startPeriodicFetchAds() {
-    // Cancel existing timer if any
-    _timer?.cancel();
-
-    // Calculate time until next fetch
-    late Duration durationUntilNextFetch;
-    if (_lastAdsFetchTime == null) {
-      durationUntilNextFetch = Duration.zero;
-    } else {
-      durationUntilNextFetch =
-          _refreshInterval -
-          (_lastAdsFetchTime!.difference(DateTime.now())).abs();
-    }
-    _logger?.i('Next fetch ads in $durationUntilNextFetch');
-    // Set timer to fetch ads
-    _timer = Timer(durationUntilNextFetch, () async {
-      await _fetchAds();
-      _startPeriodicFetchAds();
-    });
   }
 }
 
