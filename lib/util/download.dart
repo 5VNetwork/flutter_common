@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter_common/types/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_common/types/downloader.dart' as flutter_common;
@@ -86,4 +87,19 @@ Future<Uint8List> directDownloadMemory(
   final httpClient = client ?? http.Client();
   final res = await httpClient.get(Uri.parse(url));
   return res.bodyBytes;
+}
+
+/// download from multiple urls, return the first successful one
+Future<Uint8List> downloadToMemoryMulti(
+  List<String> urls, [
+  http.Client? client,
+]) async {
+  for (var url in urls) {
+    try {
+      return await directDownloadMemory(url, client);
+    } catch (e) {
+      debugPrint("download failed: $e");
+    }
+  }
+  throw Exception("all download failed");
 }

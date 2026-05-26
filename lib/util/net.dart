@@ -227,6 +227,15 @@ bool isValidHttpHttpsUrl(String url) {
   }
 }
 
+String ipToCidrString(String ip) {
+  final ipAddress = InternetAddress(ip);
+  if (ipAddress.type == InternetAddressType.IPv4) {
+    return '$ip/32';
+  } else {
+    return '$ip/128';
+  }
+}
+
 const oneGB = 1024 * 1024 * 1024;
 const oneMB = 1024 * 1024;
 const oneKB = 1024;
