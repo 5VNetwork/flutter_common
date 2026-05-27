@@ -44,7 +44,7 @@ class AdsProvider with ChangeNotifier {
        _downloadFunction = downloadFunction,
        _logger = logger,
        _refreshInterval = refreshInterval {
-    _periodicTask = PeriodicTask(
+    periodicTask = PeriodicTask(
       sharedPreferences: sharedPreferences,
       task: _fetchAds,
       lastRunKey: 'lastAdsFetchTime',
@@ -53,12 +53,12 @@ class AdsProvider with ChangeNotifier {
   }
 
   final Logger? _logger;
-  late final PeriodicTask _periodicTask;
+  late final PeriodicTask periodicTask;
 
   void start() {
     _logger?.d('Starting ads provider');
     _loadAds();
-    _periodicTask.start();
+    periodicTask.start();
   }
 
   void stop() {
@@ -67,7 +67,7 @@ class AdsProvider with ChangeNotifier {
     _timer = null;
     _adsToShow.clear();
     _adsShown.clear();
-    _periodicTask.stop();
+    periodicTask.stop();
   }
 
   // LinkedList for ads to be shown
