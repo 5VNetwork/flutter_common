@@ -42,5 +42,9 @@
     "microsoft": "Microsoft",
     "pleaseUseAnotherEmail": "Unsupported email, please use another email",
     "verificationCode": "Verification Code",
-    "send": "Send"
+    "send": "Send",
+    "password": "Password",
+    "passwordRequired": "Password required",
+    "usePassword": "Use password",
+    "useOtp": "Use OTP"
 }

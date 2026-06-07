@@ -54,5 +54,9 @@
     "microsoft": "微软",
     "pleaseUseAnotherEmail": "不支持该邮箱，请使用其他邮箱",
     "verificationCode": "验证码",
-    "send": "发送"
+    "send": "发送",
+    "password": "密码",
+    "passwordRequired": "请输入密码",
+    "usePassword": "使用密码登录",
+    "useOtp": "使用验证码登录"
 }

@@ -15,6 +15,7 @@ abstract class AuthProvider with ChangeNotifier {
   Future<void> signInWithEmailOtp(String email);
   Future<void> verifyEmailOtp(String email, String otp);
   Future<void> signInWithEmailPassword(String email, String password);
+  Future<void> updatePassword(String newPassword);
   Future<void> logOut();
   Stream<Session?> get sessionStreams;
   Session? get currentSession;
@@ -167,6 +168,11 @@ class SupabaseAuth extends AuthProvider {
   @override
   Future<void> signInWithEmailPassword(String email, String password) async {
     await supabase.auth.signInWithPassword(email: email, password: password);
+  }
+
+  @override
+  Future<void> updatePassword(String newPassword) async {
+    await supabase.auth.updateUser(UserAttributes(password: newPassword));
   }
 
   @override

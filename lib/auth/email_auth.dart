@@ -79,7 +79,9 @@ class _EmailAuthState extends State<EmailAuth> {
   void _validatePassword() {
     final password = _passwordController.text;
     setState(() {
-      _passwordError = password.isEmpty ? 'Password required' : null;
+      _passwordError = password.isEmpty
+          ? AppLocalizations.of(context)!.passwordRequired
+          : null;
     });
   }
 
@@ -175,7 +177,7 @@ class _EmailAuthState extends State<EmailAuth> {
           obscureText: true,
           decoration: InputDecoration(
             border: const OutlineInputBorder(),
-            labelText: 'Password',
+            labelText: AppLocalizations.of(context)!.password,
             errorText: _passwordError,
           ),
         ),
@@ -193,7 +195,9 @@ class _EmailAuthState extends State<EmailAuth> {
             });
           },
           child: Text(
-            _useOtp ? 'Use password' : 'Use OTP',
+            _useOtp
+                ? AppLocalizations.of(context)!.usePassword
+                : AppLocalizations.of(context)!.useOtp,
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ),

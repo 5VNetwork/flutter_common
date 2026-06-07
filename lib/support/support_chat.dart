@@ -588,6 +588,37 @@ Future<void> _openUrl(String raw) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
+/// Parses Supabase/Postgres `timestamptz` JSON as UTC when no offset is present.
+DateTime parseSupportChatTimestamp(String raw) {
+  final parsed = DateTime.parse(raw);
+  if (parsed.isUtc) return parsed;
+  return DateTime.utc(
+    parsed.year,
+    parsed.month,
+    parsed.day,
+    parsed.hour,
+    parsed.minute,
+    parsed.second,
+    parsed.millisecond,
+    parsed.microsecond,
+  );
+}
+
+/// Formats [time] in the device local timezone for chat message bubbles.
+String formatSupportChatLocalTime(DateTime time) {
+  final local = time.toLocal();
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final messageDay = DateTime(local.year, local.month, local.day);
+  if (messageDay == today) {
+    return DateFormat('HH:mm').format(local);
+  }
+  if (now.year == local.year) {
+    return DateFormat('MMM d, HH:mm').format(local);
+  }
+  return DateFormat('yyyy-MM-dd HH:mm').format(local);
+}
+
 TextStyle supportChatTimeStyle(ChatTheme theme, {required bool isSentByMe}) {
   return theme.typography.labelSmall.copyWith(
     fontSize: 10,
@@ -673,9 +704,7 @@ Widget buildSupportTextMessage(
               children: [
                 if (message.createdAt != null)
                   Text(
-                    context.watch<DateFormat>().format(
-                      message.createdAt!.toLocal(),
-                    ),
+                    formatSupportChatLocalTime(message.createdAt!),
                     style: timeStyle,
                   ),
                 if (isFailed) ...[
@@ -763,9 +792,7 @@ Widget buildSupportImageMessage(
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      context.watch<DateFormat>().format(
-                        message.createdAt!.toLocal(),
-                      ),
+                      formatSupportChatLocalTime(message.createdAt!),
                       style: timeStyle,
                     ),
                   ),
