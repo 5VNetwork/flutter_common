@@ -19,7 +19,7 @@ import 'package:flutter_common/util/version.dart';
 import 'package:flutter_common/widgets/dialog.dart';
 
 /// When enabled, listeners will be notified when there is a DownloadedInstaller
-class AutoUpdateService {
+class AutoUpdateService extends ChangeNotifier {
   final String _currentVersion;
   PeriodicTask? _timer;
   final Future<void> Function(String url, String dest) _downloader;
@@ -201,13 +201,20 @@ class AutoUpdateService {
     }
   }
 
-  Completer<void>? downloadCompleter;
+  Completer<void>? _downloadCompleter;
+  String? _downloadingVersion;
+
+  bool get isDownloading => _downloadCompleter != null;
+  String? get downloadingVersion => _downloadingVersion;
+
   Future<void> _downloadToLocal(GitHubRelease release) async {
-    if (downloadCompleter != null) {
-      return downloadCompleter!.future;
+    if (_downloadCompleter != null) {
+      return _downloadCompleter!.future;
     }
 
-    downloadCompleter = Completer<void>();
+    _downloadingVersion = release.version;
+    _downloadCompleter = Completer<void>();
+    notifyListeners();
     try {
       final newestDownloadUrl = '$_downloadUrl/$_assetName';
       DownloadedInstaller? installer;
@@ -256,12 +263,14 @@ class AutoUpdateService {
         _setDownloadedInstallerPath(installer);
       }
       _onDownloadComplete(installer!);
-      downloadCompleter!.complete();
+      _downloadCompleter!.complete();
     } catch (e, stackTrace) {
       _logger?.e('_downloadToLocal', error: e, stackTrace: stackTrace);
-      downloadCompleter!.completeError(e);
+      _downloadCompleter!.completeError(e);
     } finally {
-      downloadCompleter = null;
+      _downloadCompleter = null;
+      _downloadingVersion = null;
+      notifyListeners();
     }
   }
 
