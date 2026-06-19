@@ -338,8 +338,9 @@ ChatTheme supportChatTheme(BuildContext context, {required bool isLight}) {
   );
 }
 
-/// Message text with tappable http(s) links. Uses [Text] (not [SelectableText]) so
-/// bubbles shrink-wrap inside flutter_chat_ui's [Flexible] row layout.
+/// Message text with tappable http(s) links. Uses [Text] inside [SelectionArea]
+/// (not [SelectableText]) so bubbles shrink-wrap inside flutter_chat_ui's
+/// [Flexible] row layout while remaining copyable.
 class SupportChatLinkText extends StatelessWidget {
   const SupportChatLinkText({
     super.key,
@@ -378,11 +379,11 @@ class SupportChatLinkText extends StatelessWidget {
       spans.add(TextSpan(text: text.substring(start), style: style));
     }
 
-    if (spans.isEmpty) {
-      return Text(text, style: style);
-    }
+    final Widget messageText = spans.isEmpty
+        ? Text(text, style: style)
+        : Text.rich(TextSpan(children: spans));
 
-    return Text.rich(TextSpan(children: spans));
+    return SelectionArea(child: messageText);
   }
 }
 
