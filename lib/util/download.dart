@@ -67,7 +67,7 @@ Future<void> directDownloadToFile(
     await fileStream.flush();
     await fileStream.close();
 
-    await tempFile.rename(dest);
+    await _replaceWithTemp(tempFile, dest);
   } catch (e) {
     // Clean up temp file if anything goes wrong
     if (tempFile.existsSync()) {
@@ -76,6 +76,23 @@ Future<void> directDownloadToFile(
     rethrow;
   } finally {
     httpClient.close();
+  }
+}
+
+/// Replace [dest] with [tempFile], then remove the temp path.
+///
+/// On Windows, [File.rename] cannot overwrite an existing file and often
+/// fails with errno 17 ("cannot move the file to a different disk drive").
+/// Never delete [dest] before the new content is committed — [File.copy]
+/// overwrites in place, so a failed copy leaves the original intact.
+Future<void> _replaceWithTemp(File tempFile, String dest) async {
+  try {
+    await tempFile.rename(dest);
+  } on FileSystemException {
+    await tempFile.copy(dest);
+    if (await tempFile.exists()) {
+      await tempFile.delete();
+    }
   }
 }
 
