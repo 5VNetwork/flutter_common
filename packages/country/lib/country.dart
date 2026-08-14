@@ -10,15 +10,23 @@ Widget getCountryIcon(
   double height = 24,
   double width = 24,
 }) {
-  if (countryCode.isEmpty) {
+  final code = countryCode.trim().toUpperCase();
+  if (code.isEmpty || !_knownCountryCodes.contains(code)) {
     return Icon(Icons.language, size: height);
   }
   return SvgPicture(
     height: height,
     width: width,
-    AssetBytesLoader('packages/country/assets/flags/${countryCode.toLowerCase()}.svg.vec'),
+    AssetBytesLoader(
+      'packages/country/assets/flags/${code.toLowerCase()}.svg.vec',
+    ),
+    errorBuilder: (context, error, stackTrace) =>
+        Icon(Icons.language, size: height),
   );
 }
+
+final Set<String> _knownCountryCodes =
+    Country.values.map((c) => c.name).toSet();
 
 /// ISO codes often pinned or sorted first in country pickers (incl. e.g. China, US).
 const Set<String> popularCountryCodes = {
