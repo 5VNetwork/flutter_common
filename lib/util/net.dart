@@ -140,13 +140,31 @@ bool isValidPorts(String portRange) {
   return true;
 }
 
-bool isValidAddressPort(String addressPort) {
-  final segments = addressPort.split(':');
-  if (segments.length != 2) {
-    return false;
+/// Split `host:port` or `[ipv6]:port` into host and port.
+/// Returns null if the format is invalid (matches Go [net.SplitHostPort]).
+(String, String)? splitHostPort(String addressPort) {
+  if (addressPort.startsWith('[')) {
+    final close = addressPort.indexOf(']');
+    if (close <= 1) return null;
+    if (close + 1 >= addressPort.length || addressPort[close + 1] != ':') {
+      return null;
+    }
+    final host = addressPort.substring(1, close);
+    final port = addressPort.substring(close + 2);
+    if (host.isEmpty || port.isEmpty) return null;
+    return (host, port);
   }
-  return (isValidIp(segments[0]) || isDomain(segments[0])) &&
-      isValidPort(segments[1]);
+  final colon = addressPort.lastIndexOf(':');
+  if (colon <= 0 || colon == addressPort.length - 1) return null;
+  // Multiple colons without brackets is unbracketed IPv6, not host:port.
+  if (addressPort.indexOf(':') != colon) return null;
+  return (addressPort.substring(0, colon), addressPort.substring(colon + 1));
+}
+
+bool isValidAddressPort(String addressPort) {
+  final parsed = splitHostPort(addressPort);
+  if (parsed == null) return false;
+  return (isValidIp(parsed.$1) || isDomain(parsed.$1)) && isValidPort(parsed.$2);
 }
 
 bool isValidCidr(String cidr) {
