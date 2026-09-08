@@ -1,11 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_chat_core/flutter_chat_core.dart'
     show
         Builders,
@@ -46,6 +47,40 @@ const supportChatImageUploadingMetadataKey = 'supportChatImageUploading';
 const supportChatImageUploadErrorMetadataKey = 'supportChatImageUploadError';
 const supportChatImagePixelWidthMetadataKey = 'supportChatImagePixelWidth';
 const supportChatImagePixelHeightMetadataKey = 'supportChatImagePixelHeight';
+
+/// Durable on-disk cache for support-chat images, keyed by storage path so a
+/// reopened chat can show images without minting a new signed URL.
+class SupportChatImageCache {
+  SupportChatImageCache._();
+
+  static const cacheKey = 'supportChatImageCache';
+  static const maxAge = Duration(days: 30);
+
+  static final CacheManager instance = CacheManager(
+    Config(
+      cacheKey,
+      stalePeriod: maxAge,
+      maxNrOfCacheObjects: 400,
+    ),
+  );
+}
+
+/// Resolves [path] from disk cache, downloading via [createSignedUrl] only on miss.
+Future<File> resolveSupportChatLocalImage({
+  required String path,
+  required Future<File?> Function(String key) getFromCache,
+  required Future<File> Function(String url, {required String key})
+  downloadToCache,
+  required Future<String> Function(String path) createSignedUrl,
+}) async {
+  final cached = await getFromCache(path);
+  if (cached != null && cached.existsSync()) {
+    return cached;
+  }
+
+  final url = await createSignedUrl(path);
+  return downloadToCache(url, key: path);
+}
 
 final _supportImageDimensionsInFileNamePattern = RegExp(
   r'_(\d+)x(\d+)(?=\.[^.]+$)',
@@ -155,11 +190,16 @@ Future<SupportImageDimensions> decodeSupportImageDimensions(
 }
 
 class SupportChatStorage {
-  SupportChatStorage({SupabaseClient? client, this.fileNamePrefix = ''})
-    : _client = client ?? Supabase.instance.client;
+  SupportChatStorage({
+    SupabaseClient? client,
+    this.fileNamePrefix = '',
+    CacheManager? imageCache,
+  }) : _client = client ?? Supabase.instance.client,
+       _imageCache = imageCache ?? SupportChatImageCache.instance;
 
   final SupabaseClient _client;
   final String fileNamePrefix;
+  final CacheManager _imageCache;
 
   Future<String> uploadImage({
     required String userId,
@@ -192,6 +232,15 @@ class SupportChatStorage {
           ),
         );
 
+    // Seed the local cache so the sender never needs to re-download.
+    await _imageCache.putFile(
+      path,
+      bytes,
+      key: path,
+      maxAge: SupportChatImageCache.maxAge,
+      fileExtension: extension.replaceFirst('.', ''),
+    );
+
     return path;
   }
 
@@ -202,6 +251,24 @@ class SupportChatStorage {
     return _client.storage
         .from(supportChatStorageBucket)
         .createSignedUrl(path, expiresInSeconds);
+  }
+
+  /// Returns a local file for [path], downloading only on cache miss.
+  Future<File> resolveLocalImage(String path) {
+    return resolveSupportChatLocalImage(
+      path: path,
+      getFromCache: (key) async {
+        final cached = await _imageCache.getFileFromCache(key);
+        final file = cached?.file;
+        if (file == null || !file.existsSync()) return null;
+        return File(file.path);
+      },
+      downloadToCache: (url, {required key}) async {
+        final file = await _imageCache.getSingleFile(url, key: key);
+        return File(file.path);
+      },
+      createSignedUrl: createSignedUrl,
+    );
   }
 
   String _extensionFromFileName(String fileName) {
@@ -222,7 +289,8 @@ class SupportChatStorage {
   }
 }
 
-/// Loads a private support-chat object via a short-lived signed URL.
+/// Loads a private support-chat object from a durable local cache, falling
+/// back to a signed URL download only when the file is not cached yet.
 class SupportChatImage extends StatefulWidget {
   const SupportChatImage({
     super.key,
@@ -245,14 +313,12 @@ class SupportChatImage extends StatefulWidget {
 }
 
 class _SupportChatImageState extends State<SupportChatImage> {
-  late Future<String> _signedUrlFuture;
-  late String _cacheKey;
+  late Future<File> _localFileFuture;
 
   @override
   void initState() {
     super.initState();
-    _cacheKey = _imageCacheKey();
-    _signedUrlFuture = _loadSignedUrl();
+    _localFileFuture = _loadLocalFile();
   }
 
   @override
@@ -260,26 +326,25 @@ class _SupportChatImageState extends State<SupportChatImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageReference != widget.imageReference ||
         oldWidget.storage != widget.storage) {
-      _cacheKey = _imageCacheKey();
-      _signedUrlFuture = _loadSignedUrl();
+      _localFileFuture = _loadLocalFile();
     }
   }
 
-  String _imageCacheKey() {
+  String _storagePath() {
     return supportImagePathFromContent(
       '$supportImageContentPrefix${widget.imageReference}',
     );
   }
 
-  Future<String> _loadSignedUrl() {
-    final path = _imageCacheKey();
-    return (widget.storage ?? SupportChatStorage()).createSignedUrl(path);
+  Future<File> _loadLocalFile() {
+    final storage = widget.storage ?? SupportChatStorage();
+    return storage.resolveLocalImage(_storagePath());
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<String>(
-      future: _signedUrlFuture,
+    return FutureBuilder<File>(
+      future: _localFileFuture,
       builder: (context, snapshot) {
         final width = widget.width;
         final height = widget.height;
@@ -303,22 +368,12 @@ class _SupportChatImageState extends State<SupportChatImage> {
           );
         }
 
-        return CachedNetworkImage(
-          imageUrl: snapshot.data!,
-          cacheKey: _cacheKey,
+        return Image.file(
+          snapshot.data!,
           fit: widget.fit,
           width: width,
           height: height,
-          progressIndicatorBuilder: (context, url, progress) {
-            return SizedBox(
-              width: width,
-              height: height,
-              child: Center(
-                child: CircularProgressIndicator(value: progress.progress),
-              ),
-            );
-          },
-          errorWidget: (context, url, error) => SizedBox(
+          errorBuilder: (context, error, stackTrace) => SizedBox(
             width: width,
             height: height,
             child: const Center(child: Icon(Icons.broken_image_outlined)),
