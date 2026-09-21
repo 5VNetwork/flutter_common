@@ -57,11 +57,7 @@ class SupportChatImageCache {
   static const maxAge = Duration(days: 30);
 
   static final CacheManager instance = CacheManager(
-    Config(
-      cacheKey,
-      stalePeriod: maxAge,
-      maxNrOfCacheObjects: 400,
-    ),
+    Config(cacheKey, stalePeriod: maxAge, maxNrOfCacheObjects: 400),
   );
 }
 
@@ -445,10 +441,28 @@ class SupportChatLinkText extends StatelessWidget {
 typedef SupportChatImagePasteCallback =
     Future<void> Function(Uint8List bytes, String fileName);
 
-class _SupportChatComposer extends StatefulWidget {
-  const _SupportChatComposer({required this.onImagePaste});
+/// A one-tap canned reply shown as a chip above the composer.
+class SupportChatQuickReply {
+  const SupportChatQuickReply({required this.label, String? message})
+    : message = message ?? label;
 
-  final SupportChatImagePasteCallback onImagePaste;
+  /// Short text shown on the chip.
+  final String label;
+
+  /// Text sent when the chip is tapped. Defaults to [label].
+  final String message;
+}
+
+class _SupportChatComposer extends StatefulWidget {
+  const _SupportChatComposer({
+    this.onImagePaste,
+    this.quickReplies = const [],
+    this.onEditQuickReplies,
+  });
+
+  final SupportChatImagePasteCallback? onImagePaste;
+  final List<SupportChatQuickReply> quickReplies;
+  final VoidCallback? onEditQuickReplies;
 
   @override
   State<_SupportChatComposer> createState() => _SupportChatComposerState();
@@ -467,6 +481,12 @@ class _SupportChatComposerState extends State<_SupportChatComposer> {
     super.initState();
     _focusNode.onKeyEvent = _handleKeyEvent;
     _controller.addListener(_handleTextChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+  }
+
+  @override
+  void didUpdateWidget(_SupportChatComposer oldWidget) {
+    super.didUpdateWidget(oldWidget);
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
   }
 
@@ -507,8 +527,11 @@ class _SupportChatComposerState extends State<_SupportChatComposer> {
     try {
       final image = await Pasteboard.image;
       if (image != null && image.isNotEmpty) {
-        await widget.onImagePaste(image, _pastedImageFileName);
-        return;
+        final onImagePaste = widget.onImagePaste;
+        if (onImagePaste != null) {
+          await onImagePaste(image, _pastedImageFileName);
+          return;
+        }
       }
 
       final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
@@ -546,6 +569,52 @@ class _SupportChatComposerState extends State<_SupportChatComposer> {
     _controller.clear();
   }
 
+  void _sendQuickReply(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    context.read<OnMessageSendCallback?>()?.call(trimmed);
+  }
+
+  Widget _buildQuickReplies() {
+    return SizedBox(
+      height: 36,
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
+              itemCount: widget.quickReplies.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final reply = widget.quickReplies[index];
+                return Tooltip(
+                  message: reply.message,
+                  child: ActionChip(
+                    label: Text(reply.label),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onPressed: () => _sendQuickReply(reply.message),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (widget.onEditQuickReplies != null) ...[
+            const SizedBox(width: 8),
+            ActionChip(
+              avatar: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Edit'),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onPressed: widget.onEditQuickReplies,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   void _measure() {
     if (!mounted) return;
 
@@ -580,55 +649,66 @@ class _SupportChatComposerState extends State<_SupportChatComposer> {
         color: theme.surfaceContainerLow.withValues(alpha: 0.8),
         child: Padding(
           padding: EdgeInsets.fromLTRB(8, 8, 8, 8 + bottomSafeArea),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (onAttachmentTap != null)
-                IconButton(
-                  icon: const Icon(Icons.attachment),
-                  color: theme.onSurface.withValues(alpha: 0.5),
-                  onPressed: onAttachmentTap,
-                ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  decoration: InputDecoration(
-                    hintText: 'Type a message',
-                    hintStyle: theme.bodyMedium.copyWith(
+              if (widget.quickReplies.isNotEmpty ||
+                  widget.onEditQuickReplies != null) ...[
+                _buildQuickReplies(),
+                const SizedBox(height: 8),
+              ],
+              Row(
+                children: [
+                  if (onAttachmentTap != null)
+                    IconButton(
+                      icon: const Icon(Icons.attachment),
                       color: theme.onSurface.withValues(alpha: 0.5),
+                      onPressed: onAttachmentTap,
                     ),
-                    border: const OutlineInputBorder(
-                      borderSide: BorderSide.none,
-                      borderRadius: BorderRadius.all(Radius.circular(24)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      decoration: InputDecoration(
+                        hintText: 'Type a message',
+                        hintStyle: theme.bodyMedium.copyWith(
+                          color: theme.onSurface.withValues(alpha: 0.5),
+                        ),
+                        border: const OutlineInputBorder(
+                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.all(Radius.circular(24)),
+                        ),
+                        filled: true,
+                        fillColor: theme.surfaceContainerHigh.withValues(
+                          alpha: 0.8,
+                        ),
+                        hoverColor: Colors.transparent,
+                      ),
+                      style: theme.bodyMedium.copyWith(color: theme.onSurface),
+                      onSubmitted: _handleSubmitted,
+                      textInputAction: TextInputAction.newline,
+                      textCapitalization: TextCapitalization.sentences,
+                      keyboardType: TextInputType.multiline,
+                      minLines: 1,
+                      maxLines: 3,
                     ),
-                    filled: true,
-                    fillColor: theme.surfaceContainerHigh.withValues(
-                      alpha: 0.8,
-                    ),
-                    hoverColor: Colors.transparent,
                   ),
-                  style: theme.bodyMedium.copyWith(color: theme.onSurface),
-                  onSubmitted: _handleSubmitted,
-                  textInputAction: TextInputAction.newline,
-                  textCapitalization: TextCapitalization.sentences,
-                  keyboardType: TextInputType.multiline,
-                  minLines: 1,
-                  maxLines: 3,
-                ),
-              ),
-              const SizedBox(width: 8),
-              ValueListenableBuilder<bool>(
-                valueListenable: _hasTextNotifier,
-                builder: (context, hasText, child) {
-                  return IconButton(
-                    icon: const Icon(Icons.send),
-                    color: theme.onSurface.withValues(alpha: 0.5),
-                    onPressed: hasText
-                        ? () => _handleSubmitted(_controller.text)
-                        : null,
-                  );
-                },
+                  const SizedBox(width: 8),
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _hasTextNotifier,
+                    builder: (context, hasText, child) {
+                      return IconButton(
+                        icon: const Icon(Icons.send),
+                        color: theme.onSurface.withValues(alpha: 0.5),
+                        onPressed: hasText
+                            ? () => _handleSubmitted(_controller.text)
+                            : null,
+                      );
+                    },
+                  ),
+                ],
               ),
             ],
           ),
@@ -955,11 +1035,22 @@ class _LocalSupportChatImage extends StatelessWidget {
   }
 }
 
-Builders supportChatBuilders({SupportChatImagePasteCallback? onImagePaste}) {
+Builders supportChatBuilders({
+  SupportChatImagePasteCallback? onImagePaste,
+  List<SupportChatQuickReply> quickReplies = const [],
+  VoidCallback? onEditQuickReplies,
+}) {
   return Builders(
-    composerBuilder: onImagePaste == null
+    composerBuilder:
+        onImagePaste == null &&
+            quickReplies.isEmpty &&
+            onEditQuickReplies == null
         ? null
-        : (context) => _SupportChatComposer(onImagePaste: onImagePaste),
+        : (context) => _SupportChatComposer(
+            onImagePaste: onImagePaste,
+            quickReplies: quickReplies,
+            onEditQuickReplies: onEditQuickReplies,
+          ),
     textMessageBuilder: buildSupportTextMessage,
     imageMessageBuilder: buildSupportImageMessage,
     chatAnimatedListBuilder: (context, itemBuilder) =>
