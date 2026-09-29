@@ -279,6 +279,8 @@ class AdsProvider with ChangeNotifier {
       _adsToShow.clear();
       _adsShown.clear();
       _adsToShow.addAll(loadedAds);
+      imageCache.clear();
+      imageCache.clearLiveImages();
       notifyListeners();
       _logger?.i('Loaded ${_adsToShow.length} cached ads');
     } catch (e) {

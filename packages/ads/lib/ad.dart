@@ -144,6 +144,7 @@ class Ads extends StatefulWidget {
 class _AdsState extends State<Ads> {
   final Map<int, Ad> _ads = {};
   late final Timer _timer;
+  AdsProvider? _adsProvider;
 
   @override
   void initState() {
@@ -156,7 +157,26 @@ class _AdsState extends State<Ads> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final provider = context.read<AdsProvider>();
+    if (_adsProvider != provider) {
+      _adsProvider?.removeListener(_onAdsProviderChanged);
+      _adsProvider = provider;
+      _adsProvider!.addListener(_onAdsProviderChanged);
+    }
+  }
+
+  void _onAdsProviderChanged() {
+    if (!mounted) return;
+    setState(() {
+      _ads.clear();
+    });
+  }
+
+  @override
   void dispose() {
+    _adsProvider?.removeListener(_onAdsProviderChanged);
     _timer.cancel();
     super.dispose();
   }
@@ -173,7 +193,7 @@ class _AdsState extends State<Ads> {
       crossAxisCount = 3;
     }
 
-    final adsProvider = context.watch<AdsProvider>();
+    final adsProvider = context.read<AdsProvider>();
     return SliverMasonryGrid(
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
@@ -200,7 +220,7 @@ class _AdsState extends State<Ads> {
             return AdWidget(ad: ad!, maxWidth: constraints.maxWidth);
           },
         );
-      }, childCount: context.read<AdsProvider>().adsLen + 1),
+      }, childCount: adsProvider.adsLen + 1),
       gridDelegate: SliverSimpleGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
       ),
@@ -220,6 +240,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   Ad? _currentAd;
   double? _lastMaxHeight;
   double? _lastMaxWidth;
+  AdsProvider? _adsProvider;
 
   @override
   void initState() {
@@ -237,15 +258,33 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final provider = context.read<AdsProvider>();
+    if (_adsProvider != provider) {
+      _adsProvider?.removeListener(_onAdsProviderChanged);
+      _adsProvider = provider;
+      _adsProvider!.addListener(_onAdsProviderChanged);
+    }
+  }
+
+  void _onAdsProviderChanged() {
+    if (!mounted) return;
+    setState(() {
+      _currentAd = null;
+    });
+  }
+
+  @override
   void dispose() {
+    _adsProvider?.removeListener(_onAdsProviderChanged);
     _timer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Keep watch so ad inventory updates can trigger rebuilds.
-    final adsProvider = context.watch<AdsProvider>();
+    final adsProvider = context.read<AdsProvider>();
     return LayoutBuilder(
       builder: (ctx, c) {
         _lastMaxHeight = c.maxHeight;
