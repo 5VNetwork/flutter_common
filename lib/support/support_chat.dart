@@ -26,6 +26,7 @@ import 'package:flutter_chat_ui/flutter_chat_ui.dart'
         ComposerHeightNotifier,
         OnAttachmentTapCallback,
         OnMessageSendCallback;
+import 'package:flutter_common/support/support_chat_send.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -576,42 +577,30 @@ class _SupportChatComposerState extends State<_SupportChatComposer> {
   }
 
   Widget _buildQuickReplies() {
-    return SizedBox(
-      height: 36,
-      child: Row(
-        children: [
-          Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.zero,
-              itemCount: widget.quickReplies.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final reply = widget.quickReplies[index];
-                return Tooltip(
-                  message: reply.message,
-                  child: ActionChip(
-                    label: Text(reply.label),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onPressed: () => _sendQuickReply(reply.message),
-                  ),
-                );
-              },
-            ),
-          ),
-          if (widget.onEditQuickReplies != null) ...[
-            const SizedBox(width: 8),
-            ActionChip(
-              avatar: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('Edit'),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final reply in widget.quickReplies)
+          Tooltip(
+            message: reply.message,
+            child: ActionChip(
+              label: Text(reply.label),
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              onPressed: widget.onEditQuickReplies,
+              onPressed: () => _sendQuickReply(reply.message),
             ),
-          ],
-        ],
-      ),
+          ),
+        if (widget.onEditQuickReplies != null)
+          ActionChip(
+            avatar: const Icon(Icons.edit_outlined, size: 16),
+            label: const Text('Edit'),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            onPressed: widget.onEditQuickReplies,
+          ),
+      ],
     );
   }
 
@@ -790,6 +779,10 @@ Widget buildSupportTextMessage(
   final bubbleColor = isFailed
       ? Color.alphaBlend(errorColor.withValues(alpha: 0.35), backgroundColor)
       : backgroundColor;
+  final sendError = isFailed ? supportChatSendErrorFromMessage(message) : null;
+  final failedLabel = sendError == null
+      ? 'Failed to send · Tap to retry'
+      : 'Failed to send: $sendError · Tap to retry';
 
   // Same shape as flutter_chat_ui SimpleTextMessage — no Align; ChatMessage aligns.
   return ClipRRect(
@@ -820,14 +813,17 @@ Widget buildSupportTextMessage(
             const SizedBox(height: 6),
             Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(Icons.error_outline, size: 14, color: errorColor),
                 const SizedBox(width: 4),
-                Text(
-                  'Failed to send · Tap to retry',
-                  style: theme.typography.labelSmall.copyWith(
-                    color: errorColor,
-                    fontSize: 11,
+                Flexible(
+                  child: Text(
+                    failedLabel,
+                    style: theme.typography.labelSmall.copyWith(
+                      color: errorColor,
+                      fontSize: 11,
+                    ),
                   ),
                 ),
               ],

@@ -30,11 +30,15 @@ Message supportChatPendingTextMessage({
   );
 }
 
+/// Metadata key for the human-readable reason a text send failed.
+const supportChatSendErrorMetadataKey = 'supportChatSendError';
+
 Message supportChatFailedTextMessage({
   required String id,
   required String authorId,
   required String text,
   required DateTime createdAt,
+  String? error,
 }) {
   return Message.text(
     id: id,
@@ -43,7 +47,17 @@ Message supportChatFailedTextMessage({
     text: text,
     status: MessageStatus.error,
     failedAt: DateTime.now(),
+    metadata: error == null || error.trim().isEmpty
+        ? null
+        : {supportChatSendErrorMetadataKey: error.trim()},
   );
+}
+
+String? supportChatSendErrorFromMessage(Message message) {
+  final value = message.metadata?[supportChatSendErrorMetadataKey];
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 /// Pending outbound bubble that matches [incoming] (same author + content).
@@ -118,8 +132,11 @@ Future<void> supportChatConfirmOutbound({
   await controller.updateMessage(pending, delivered);
 }
 
-/// Inserts [pending], runs [send], then confirms with the server message.
-Future<void> supportChatDeliverOutboundText({
+/// Runs [send] for an already-inserted [pending] bubble.
+///
+/// Returns `null` on success, or a short error string after marking the bubble
+/// failed.
+Future<String?> supportChatDeliverOutboundText({
   required ChatController controller,
   required Message pending,
   required Future<Message> Function() send,
@@ -131,8 +148,10 @@ Future<void> supportChatDeliverOutboundText({
       pending: pending,
       delivered: delivered,
     );
-  } catch (_) {
+    return null;
+  } catch (error) {
     final textMessage = pending as TextMessage;
+    final reason = supportChatFormatSendError(error);
     await controller.updateMessage(
       pending,
       supportChatFailedTextMessage(
@@ -140,7 +159,36 @@ Future<void> supportChatDeliverOutboundText({
         authorId: textMessage.authorId,
         text: textMessage.text,
         createdAt: textMessage.createdAt ?? DateTime.now(),
+        error: reason,
       ),
     );
+    return reason;
   }
+}
+
+/// Turns a send exception into a short string for the bubble / snackbar.
+String supportChatFormatSendError(Object error) {
+  final raw = error.toString().trim();
+  var message = raw;
+  const prefixes = [
+    'Exception: ',
+    'StateError: ',
+    'Bad state: ',
+    'PostgrestException: ',
+  ];
+  for (final prefix in prefixes) {
+    if (message.startsWith(prefix)) {
+      message = message.substring(prefix.length).trim();
+      break;
+    }
+  }
+
+  final lower = message.toLowerCase();
+  if (lower.contains('row-level security') ||
+      lower.contains('violates row-level security')) {
+    return 'Send blocked (conversation closed or user mismatch). '
+        'If the chat was closed, wait for the customer to message again.';
+  }
+  if (message.isEmpty) return 'Unknown send error';
+  return message;
 }
