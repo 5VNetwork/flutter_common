@@ -21,6 +21,7 @@ class SignInPage extends StatefulWidget {
     required this.termOfServiceUrl,
     required this.privacyPolicyUrl,
     this.showAppleNotification = true,
+    this.useEmailWhitelist = false,
   });
   final bool showGoogle;
   final bool showMicrosoft;
@@ -28,6 +29,9 @@ class SignInPage extends StatefulWidget {
   final bool showAppleNotification;
   final String termOfServiceUrl;
   final String privacyPolicyUrl;
+
+  /// When true, email login only allows domains in the email whitelist.
+  final bool useEmailWhitelist;
 
   @override
   State<SignInPage> createState() => _SignInPageState();
@@ -148,7 +152,9 @@ class _SignInPageState extends State<SignInPage> {
                             ),
                             body: Padding(
                               padding: const EdgeInsets.all(8.0),
-                              child: EmailAuth(),
+                              child: EmailAuth(
+                                useWhitelist: widget.useEmailWhitelist,
+                              ),
                             ),
                           ),
                         ),
@@ -166,7 +172,9 @@ class _SignInPageState extends State<SignInPage> {
                             ).colorScheme.surfaceContainerHigh,
                             title: Text(AppLocalizations.of(context)!.login),
                           ),
-                          content: EmailAuth(),
+                          content: EmailAuth(
+                            useWhitelist: widget.useEmailWhitelist,
+                          ),
                         ),
                       );
                     }

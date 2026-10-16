@@ -7,7 +7,12 @@ import 'package:flutter_common/l10n/app_localizations.dart';
 import 'package:flutter_common/widgets/count_down_timer.dart';
 
 class EmailAuth extends StatefulWidget {
-  const EmailAuth({super.key});
+  /// When true, only domains in the email whitelist asset are allowed.
+  /// When false (default), domains in the disposable email blocklist are rejected.
+  const EmailAuth({super.key, this.useWhitelist = false});
+
+  final bool useWhitelist;
+
   @override
   State<EmailAuth> createState() => _EmailAuthState();
 }
@@ -23,32 +28,34 @@ class _EmailAuthState extends State<EmailAuth> {
   String? _sendOtpError;
   String? _emailError;
   String? _passwordError;
-  Set<String> _disposableEmailDomains = {};
+  Set<String> _emailDomains = {};
 
   @override
   initState() {
     super.initState();
-    _loadDisposableEmailBlocklist();
+    _loadEmailDomainList();
     _emailController.addListener(_validateEmail);
     _passwordController.addListener(_validatePassword);
   }
 
-  Future<void> _loadDisposableEmailBlocklist() async {
+  Future<void> _loadEmailDomainList() async {
+    final assetPath = widget.useWhitelist
+        ? 'packages/flutter_common/assets/email_white_list.txt'
+        : 'packages/flutter_common/assets/disposable_email_blocklist.conf';
     try {
-      final content = await rootBundle.loadString(
-        'packages/flutter_common/assets/disposable_email_blocklist.conf',
-      );
+      final content = await rootBundle.loadString(assetPath);
       final domains = content
           .split('\n')
-          .map((line) => line.trim())
+          .map((line) => line.trim().toLowerCase())
           .where((line) => line.isNotEmpty)
           .toSet();
       setState(() {
-        _disposableEmailDomains = domains;
+        _emailDomains = domains;
       });
+      // Re-validate in case the user already typed an email.
+      _validateEmail();
     } catch (e) {
-      // If blocklist fails to load, continue without blocking
-      debugPrint('Failed to load disposable email blocklist: $e');
+      debugPrint('Failed to load email domain list ($assetPath): $e');
     }
   }
 
@@ -66,8 +73,11 @@ class _EmailAuthState extends State<EmailAuth> {
 
     // Extract domain from email
     final domain = email.split('@').last.toLowerCase();
+    final rejected = widget.useWhitelist
+        ? !_emailDomains.contains(domain)
+        : _emailDomains.contains(domain);
 
-    if (_disposableEmailDomains.contains(domain)) {
+    if (rejected) {
       setState(() {
         _emailError = AppLocalizations.of(context)!.pleaseUseAnotherEmail;
       });
